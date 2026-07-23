@@ -1456,3 +1456,60 @@ body.perigo-critico::before {
   .coach-tip.mostra { animation: coachIn 0.4s ease forwards; }
   body.perigo-critico::before { animation: none; opacity: 0.5; }
 }
+
+/* ---------------------------------------------------- anuncio de combo (DOM) */
+
+/* Fica ACIMA do tabuleiro (ancorado no topo do board-wrap), nunca sobre as
+   pecas — foi o pedido: o combo nao pode atrapalhar de enxergar a jogada. O
+   fogo e do CSS: texto em degrade quente + brilho tremeluzente. */
+.board-wrap { position: relative; }
+
+.combo-fx {
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  margin-bottom: 2px;
+  transform: translate(-50%, 30%) scale(0.6) rotate(-4deg);
+  z-index: 8;
+  pointer-events: none;
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  opacity: 0;
+  background: linear-gradient(180deg, #fff6c0 0%, #ffcf3d 38%, #ff7a2d 70%, #ff2d55 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter:
+    drop-shadow(0 0 9px rgba(255, 150, 40, 0.85))
+    drop-shadow(0 0 20px rgba(255, 90, 40, 0.5))
+    drop-shadow(0 2px 2px rgba(0, 0, 0, 0.55));
+}
+
+.combo-fx.mostra { animation: comboFxIn 0.85s cubic-bezier(0.2, 1.5, 0.4, 1) forwards; }
+
+/* Combos maiores tremem o fogo mais forte. */
+.combo-fx[data-nivel='medio'].mostra { animation-name: comboFxIn, comboFlicker; animation-duration: 0.85s, 0.12s; animation-iteration-count: 1, 7; }
+.combo-fx[data-nivel='alto'].mostra { animation-name: comboFxIn, comboFlicker; animation-duration: 0.85s, 0.09s; animation-iteration-count: 1, 9; }
+
+@keyframes comboFxIn {
+  0% { opacity: 0; transform: translate(-50%, 30%) scale(0.6) rotate(-4deg); }
+  22% { opacity: 1; transform: translate(-50%, 0) scale(1.12) rotate(-4deg); }
+  40% { transform: translate(-50%, 0) scale(1) rotate(-4deg); }
+  78% { opacity: 1; transform: translate(-50%, 0) scale(1) rotate(-4deg); }
+  100% { opacity: 0; transform: translate(-50%, -55%) scale(0.95) rotate(-4deg); }
+}
+
+@keyframes comboFlicker {
+  0%, 100% { filter: drop-shadow(0 0 9px rgba(255, 150, 40, 0.85)) drop-shadow(0 0 20px rgba(255, 90, 40, 0.5)) drop-shadow(0 2px 2px rgba(0, 0, 0, 0.55)); }
+  50% { filter: drop-shadow(0 0 16px rgba(255, 190, 60, 1)) drop-shadow(0 0 30px rgba(255, 110, 40, 0.8)) drop-shadow(0 2px 2px rgba(0, 0, 0, 0.55)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .combo-fx.mostra,
+  .combo-fx[data-nivel='medio'].mostra,
+  .combo-fx[data-nivel='alto'].mostra {
+    animation: comboFxIn 0.6s ease forwards;
+  }
+}

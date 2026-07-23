@@ -374,6 +374,28 @@ function celebrarCancelamento(qtd) {
  * VOA ate a miniatura do adversario alvo, que reage ao ser atingida. Da a
  * sensacao fisica de "acertei ele" em vez de um numero solto.
  */
+let comboFxTimer = null;
+
+/**
+ * Anuncio de combo 'COMBO xN' pegando fogo, ACIMA do tabuleiro — nunca sobre as
+ * pecas. O fogo e do CSS (texto em degrade quente + brilho tremeluzente). Fica
+ * na area do placar/barra, que e interface, entao o jogo continua todo visivel.
+ * Cresce e esquenta com o combo.
+ */
+function mostrarCombo(streak) {
+  const fx = document.getElementById('comboFx');
+  if (!fx) return;
+  const nivel = Math.min(streak, 8);
+  fx.textContent = `COMBO x${streak}`;
+  fx.style.fontSize = (1.5 + Math.min(streak - 2, 6) * 0.32) + 'rem';
+  fx.dataset.nivel = nivel >= 5 ? 'alto' : nivel >= 3 ? 'medio' : 'baixo';
+  fx.classList.remove('mostra');
+  void fx.offsetWidth;
+  fx.classList.add('mostra');
+  if (comboFxTimer) clearTimeout(comboFxTimer);
+  comboFxTimer = setTimeout(() => fx.classList.remove('mostra'), 850);
+}
+
 function dispararAtaque(targetId, units) {
   const refs = opponentCards.get(targetId);
   const canvasRect = el.canvas.getBoundingClientRect();
@@ -756,8 +778,12 @@ function createSessionWithHooks() {
       updateScoreUI(true);
       updatePressureUI();
       updateComboUI();
-      // Combo pegando fogo no centro do tabuleiro, a partir de x2.
-      if (info.combo >= 2) renderer.showCombo(info.combo);
+      // Combo pegando fogo, a partir de x2: o anuncio no DOM (acima do
+      // tabuleiro), o tranco de tela no renderer.
+      if (info.combo >= 2) {
+        mostrarCombo(info.combo);
+        renderer.showCombo(info.combo);
+      }
       if (info.cancelled > 0) {
         // Cancelou o ataque que estava chegando: e a jogada mais importante do
         // jogo. Retorno bem visivel, para o jogador LIGAR combo -> defesa.

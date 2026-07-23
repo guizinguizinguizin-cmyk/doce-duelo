@@ -386,117 +386,21 @@ export function createRenderer(canvas, options = {}) {
   }
 
   // ---------------------------------------------------------------------------
-  // Combo em chamas
+  // Combo (so o tranco de tela)
   // ---------------------------------------------------------------------------
 
-  let comboFlare = null;
-
   /**
-   * Anuncio de combo no centro do tabuleiro, PEGANDO FOGO.
+   * O ANUNCIO do combo ('COMBO xN' em chamas) mora no DOM, ACIMA do tabuleiro
+   * (ver #comboFx em main.js) — nunca sobre as pecas, senao tapa a jogada.
    *
-   * Quanto maior o combo, maior o numero, mais quente a cor e mais fogo sobe.
-   * E o momento que faz o jogador sentir que fez algo grande — sem isso, um
-   * combo x5 se parece com uma jogada qualquer.
+   * Aqui fica so o tranco de tela: o balanco e o clarao, que reforcam a
+   * sensacao de impacto sem cobrir nada.
    */
   function showCombo(streak) {
     if (streak < 2) return;
     const intensidade = Math.min(1, (streak - 2) / 5);
-    comboFlare = { streak, life: 1.1, maxLife: 1.1, intensidade };
-
-    // Baforada inicial de brasas subindo por tras do numero.
-    if (!reducedMotion) {
-      const cx = cssWidth / 2;
-      const cy = BOARD_PAD + cellSize * 1.15; // topo do tabuleiro, longe do meio do jogo
-      const n = 14 + Math.round(intensidade * 26);
-      for (let i = 0; i < n; i++) {
-        const cor = i % 3 === 0 ? '#ffe27a' : i % 3 === 1 ? '#ff8a3d' : '#ff4d4d';
-        particles.emit({
-          x: cx + (Math.random() - 0.5) * cellSize * 3,
-          y: cy + cellSize,
-          count: 1,
-          color: cor,
-          shape: 'circle',
-          speed: 120 + Math.random() * 220,
-          angle: -Math.PI / 2,
-          spread: 0.9,
-          size: cellSize * (0.14 + intensidade * 0.14),
-          life: 0.6 + Math.random() * 0.5,
-          gravity: -0.35, // brasa SOBE
-        });
-      }
-    }
     if (streak >= 3) shake(4 + intensidade * 10);
-    if (streak >= 4) flash('rgba(255,140,40,0.22)', 0.28);
-  }
-
-  function updateComboFlare(dt) {
-    if (!comboFlare) return;
-    comboFlare.life -= dt;
-
-    // Chama continua lambendo o numero enquanto ele vive.
-    if (!reducedMotion && comboFlare.life > 0.2 && Math.random() < 0.6) {
-      const cx = cssWidth / 2;
-      const cy = BOARD_PAD + cellSize * 1.15; // topo do tabuleiro, longe do meio do jogo
-      const larg = cellSize * (1.4 + comboFlare.intensidade * 1.2);
-      const cor = Math.random() < 0.5 ? '#ffcf5a' : '#ff7a2d';
-      particles.emit({
-        x: cx + (Math.random() - 0.5) * larg,
-        y: cy + cellSize * 0.5,
-        count: 1,
-        color: cor,
-        shape: 'circle',
-        speed: 90 + Math.random() * 130,
-        angle: -Math.PI / 2,
-        spread: 0.5,
-        size: cellSize * 0.12,
-        life: 0.5,
-        gravity: -0.4,
-      });
-    }
-    if (comboFlare.life <= 0) comboFlare = null;
-  }
-
-  function drawComboFlare() {
-    if (!comboFlare) return;
-    const t = 1 - comboFlare.life / comboFlare.maxLife;
-    const pop = t < 0.22 ? easeOutBack(t / 0.22) : 1;
-    const saida = t > 0.7 ? 1 - (t - 0.7) / 0.3 : 1;
-    const cx = cssWidth / 2;
-    const cy = BOARD_PAD + cellSize * 1.15; // topo do tabuleiro, longe do meio do jogo
-    const mult = 1 + Math.min(comboFlare.streak - 1, 6) * 0.2;
-    // Cresce com o combo: pequeno no x2 (que acontece toda hora), tomando a
-    // tela so nos combos grandes, que sao raros e merecem o estardalhaco.
-    const size = cellSize * (0.8 + comboFlare.intensidade * 1.1) * pop;
-
-    // Cor esquenta com o combo: amarelo -> laranja -> vermelho.
-    const cor = comboFlare.intensidade > 0.6 ? '#ff5a3d' : comboFlare.intensidade > 0.25 ? '#ff9a2d' : '#ffd23d';
-
-    ctx.save();
-    // Translucido: da para ver as pecas por tras do anuncio.
-    ctx.globalAlpha = Math.max(0, saida) * 0.82;
-    ctx.translate(cx, cy);
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-
-    ctx.font = `900 ${size}px 'Segoe UI', system-ui, sans-serif`;
-    ctx.lineWidth = Math.max(2, size * 0.08);
-    ctx.strokeStyle = 'rgba(10,4,24,0.7)';
-    ctx.strokeText(`COMBO x${comboFlare.streak}`, 0, 0);
-
-    // Brilho quente atras do texto.
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.shadowColor = cor;
-    ctx.shadowBlur = 24 + comboFlare.intensidade * 30;
-    ctx.fillStyle = cor;
-    ctx.fillText(`COMBO x${comboFlare.streak}`, 0, 0);
-    ctx.restore();
-
-    ctx.font = `800 ${size * 0.42}px 'Segoe UI', system-ui, sans-serif`;
-    ctx.fillStyle = '#fff';
-    ctx.globalAlpha = Math.max(0, saida) * 0.85;
-    ctx.fillText(`x${mult.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')} dano`, 0, size * 0.62);
-    ctx.restore();
+    if (streak >= 4) flash('rgba(255,140,40,0.2)', 0.26);
   }
 
   function shake(magnitude) {
@@ -901,7 +805,6 @@ export function createRenderer(canvas, options = {}) {
     particles.update(dt);
     updateEffects(dt);
     updateFloatTexts(dt);
-    updateComboFlare(dt);
 
     if (shakeMag > 0.05) {
       shakeTime += dt;
@@ -928,7 +831,6 @@ export function createRenderer(canvas, options = {}) {
     particles.draw(ctx);
     drawEffects();
     drawFloatTexts();
-    drawComboFlare();
 
     if (flashAlpha > 0.001 && flashColor) {
       ctx.save();

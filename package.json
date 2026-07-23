@@ -7,6 +7,11 @@
   "scripts": {
     "test": "node --test",
     "dev": "node scripts/serve.js",
-    "icons": "node generate-icons.js"
+    "icons": "node generate-icons.js",
+    "smoke": "node scripts/smoke.js",
+    "balance": "node scripts/balance.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.61.1"
   }
 }

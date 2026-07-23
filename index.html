@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#1a0f33">
+<meta name="theme-color" content="#14092b">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Doce Duelo">
-<meta name="description" content="Combine 3 e ataque os adversarios em tempo real, ate 4 jogadores - feito por HollowVoid Guilherme">
+<meta name="description" content="Combine 3 e ataque os adversários em tempo real, até 4 jogadores. Modo solo contra a máquina. Feito por HollowVoid Guilherme.">
 <title>Doce Duelo — feito por HollowVoid Guilherme</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png">
@@ -17,108 +17,284 @@
 </head>
 <body>
 
-<div id="hitFlashOverlay" class="hit-flash-overlay"></div>
+<div id="bootError" class="boot-error hidden" role="alert"></div>
 
 <header class="app-header">
-  <h1>🍬 Doce Duelo</h1>
-  <div class="credit-banner">Feito por <strong>HollowVoid Guilherme</strong></div>
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <h1>Doce Duelo</h1>
+  </div>
+  <button id="btnSound" class="icon-btn" aria-label="Ligar ou desligar o som" aria-pressed="false">
+    <span id="soundIcon">🔊</span>
+  </button>
 </header>
 
 <main id="app">
 
-  <!-- LOBBY -->
-  <section id="screenLobby" class="screen">
-    <div class="card">
-      <h2>Jogar com outras pessoas</h2>
-      <p class="sub">Cada jogador usa o próprio celular. Um cria a sala, os outros entram com o código.</p>
+  <!-- ================= MENU ================= -->
+  <section id="screenMenu" class="screen" aria-label="Menu principal">
+    <div class="hero">
+      <div class="hero-gems" id="heroGems" aria-hidden="true"></div>
+      <p class="hero-tagline">Combine, ataque e seja o último de pé.</p>
+    </div>
 
-      <p class="field-label">Quantos jogadores na sala?</p>
-      <div class="players-select" id="playersSelect">
-        <button data-n="2" class="player-count-btn active">2</button>
-        <button data-n="3" class="player-count-btn">3</button>
-        <button data-n="4" class="player-count-btn">4</button>
+    <button id="btnPlaySolo" class="menu-btn primary">
+      <span class="menu-btn-icon">🤖</span>
+      <span class="menu-btn-text">
+        <strong>Jogar sozinho</strong>
+        <small>Contra a máquina, sem precisar de internet</small>
+      </span>
+    </button>
+
+    <button id="btnPlayOnline" class="menu-btn">
+      <span class="menu-btn-icon">👥</span>
+      <span class="menu-btn-text">
+        <strong>Jogar com amigos</strong>
+        <small>Até 4 pessoas, cada uma no seu celular</small>
+      </span>
+    </button>
+
+    <div class="menu-row">
+      <button id="btnStats" class="menu-btn small">
+        <span class="menu-btn-icon">📊</span>
+        <span class="menu-btn-text"><strong>Estatísticas</strong></span>
+      </button>
+      <button id="btnSettings" class="menu-btn small">
+        <span class="menu-btn-icon">⚙️</span>
+        <span class="menu-btn-text"><strong>Ajustes</strong></span>
+      </button>
+    </div>
+
+    <button id="btnEditName" class="name-chip">
+      Jogando como <strong id="menuPlayerName">—</strong> <span class="pencil">✏️</span>
+    </button>
+  </section>
+
+  <!-- ================= SOLO ================= -->
+  <section id="screenSolo" class="screen hidden" aria-label="Configurar partida solo">
+    <div class="card">
+      <button class="back-btn" data-back="Menu">‹ Voltar</button>
+      <h2>Jogar sozinho</h2>
+
+      <p class="field-label">Dificuldade</p>
+      <div class="option-grid" id="difficultySelect" role="radiogroup" aria-label="Dificuldade"></div>
+      <p class="option-hint" id="difficultyHint"></p>
+
+      <p class="field-label">Quantos adversários?</p>
+      <div class="segmented" id="botCountSelect" role="radiogroup" aria-label="Número de adversários">
+        <button data-n="1" class="seg-btn active" role="radio" aria-checked="true">1</button>
+        <button data-n="2" class="seg-btn" role="radio" aria-checked="false">2</button>
+        <button data-n="3" class="seg-btn" role="radio" aria-checked="false">3</button>
+      </div>
+
+      <button id="btnStartSolo" class="big-btn primary">Começar partida</button>
+      <p class="record-line" id="soloRecord"></p>
+    </div>
+  </section>
+
+  <!-- ================= ONLINE ================= -->
+  <section id="screenOnline" class="screen hidden" aria-label="Jogar online">
+    <div class="card">
+      <button class="back-btn" data-back="Menu">‹ Voltar</button>
+      <h2>Jogar com amigos</h2>
+      <p class="sub">Uma pessoa cria a sala e passa o código. As outras entram com ele.</p>
+
+      <p class="field-label">Tamanho da sala</p>
+      <div class="segmented" id="playersSelect" role="radiogroup" aria-label="Tamanho da sala">
+        <button data-n="2" class="seg-btn active" role="radio" aria-checked="true">2</button>
+        <button data-n="3" class="seg-btn" role="radio" aria-checked="false">3</button>
+        <button data-n="4" class="seg-btn" role="radio" aria-checked="false">4</button>
       </div>
 
       <button id="btnCreate" class="big-btn primary">Criar sala</button>
 
-      <div class="divider"><span>ou</span></div>
+      <div class="divider"><span>ou entre numa sala</span></div>
 
       <div class="join-row">
-        <input id="joinCodeInput" class="code-input" placeholder="Código da sala" maxlength="6" autocomplete="off" autocapitalize="characters">
+        <input id="joinCodeInput" class="code-input" placeholder="CÓDIGO" maxlength="6"
+               autocomplete="off" autocapitalize="characters" spellcheck="false"
+               inputmode="text" aria-label="Código da sala">
         <button id="btnJoin" class="big-btn">Entrar</button>
       </div>
 
-      <div id="lobbyStatus" class="lobby-status"></div>
+      <div id="lobbyStatus" class="lobby-status" role="status" aria-live="polite"></div>
     </div>
   </section>
 
-  <!-- WAITING ROOM -->
-  <section id="screenWaiting" class="screen hidden">
+  <!-- ================= SALA DE ESPERA ================= -->
+  <section id="screenWaiting" class="screen hidden" aria-label="Sala de espera">
     <div class="card center">
       <h2>Sala de espera</h2>
+
       <div id="hostCodeBox" class="host-code-box hidden">
-        <p>Compartilhe este código:</p>
-        <div class="code-display" id="hostCodeDisplay">------</div>
-        <button id="copyCodeBtn" class="mini-btn">Copiar código</button>
+        <p class="sub">Compartilhe este código:</p>
+        <div class="code-display" id="hostCodeDisplay" aria-live="polite">-----</div>
+        <div class="code-actions">
+          <button id="copyCodeBtn" class="mini-btn">📋 Copiar</button>
+          <button id="shareCodeBtn" class="mini-btn hidden">📤 Compartilhar</button>
+        </div>
       </div>
-      <p class="sub" id="waitingSub">Aguardando jogadores...</p>
+
+      <p class="sub" id="waitingSub" role="status" aria-live="polite">Aguardando jogadores...</p>
       <ul class="roster-list" id="rosterList"></ul>
+
       <button id="btnStartGame" class="big-btn primary hidden">Iniciar partida</button>
-      <button id="btnCancelWait" class="mini-btn">Cancelar</button>
+      <button id="btnCancelWait" class="mini-btn wide">Cancelar</button>
     </div>
   </section>
 
-  <!-- COUNTDOWN -->
-  <section id="screenCountdown" class="screen hidden">
-    <div class="countdown-num" id="countdownNum">3</div>
-    <p class="sub">Prepare-se!</p>
+  <!-- ================= CONTAGEM ================= -->
+  <section id="screenCountdown" class="screen hidden" aria-label="Contagem regressiva">
+    <div class="countdown-wrap">
+      <div class="countdown-num" id="countdownNum">3</div>
+      <p class="countdown-sub">Prepare-se!</p>
+    </div>
   </section>
 
-  <!-- BATTLE -->
-  <section id="screenBattle" class="screen hidden">
+  <!-- ================= BATALHA ================= -->
+  <section id="screenBattle" class="screen hidden" aria-label="Partida">
     <div class="opponents-row" id="opponentsRow"></div>
 
     <div class="my-area">
       <div class="my-top-row">
-        <span class="score-label">Você — <span id="myScore">0</span> pts <span id="comboBadge" class="combo-badge hidden"></span></span>
-        <span id="connStatus" class="conn-status">🟢 conectado</span>
+        <div class="my-identity">
+          <span class="my-name" id="myNameLabel">Você</span>
+          <span class="my-score" id="myScore">0</span>
+          <span id="comboBadge" class="combo-badge hidden"></span>
+        </div>
+        <div class="battle-actions">
+          <button id="btnHint" class="icon-btn small" aria-label="Mostrar uma dica">💡</button>
+          <button id="btnQuit" class="icon-btn small" aria-label="Sair da partida">✕</button>
+        </div>
       </div>
-      <div class="bar-track-h">
-        <div class="bar-fill-h mine" id="myBarFill"></div>
+
+      <div class="bar-track-h" role="progressbar" aria-label="Sua barra de pressão"
+           aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="myBarTrack">
+        <div class="bar-fill-h" id="myBarFill"></div>
+        <span class="bar-caption" id="myBarCaption">Pressão 0%</span>
       </div>
+
       <div class="board-wrap">
-        <div id="board" class="board"></div>
+        <canvas id="boardCanvas" aria-label="Tabuleiro de doces" role="img"></canvas>
       </div>
-      <p class="hint">Arraste um doce para um vizinho para trocar</p>
+
+      <p class="hint" id="battleHint">Arraste um doce para o vizinho para trocar</p>
+      <p class="sr-only" id="srAnnounce" role="status" aria-live="polite"></p>
     </div>
   </section>
 
-  <!-- GAME OVER -->
-  <section id="screenGameOver" class="screen hidden">
-    <div class="card center">
+  <!-- ================= FIM ================= -->
+  <section id="screenGameOver" class="screen hidden" aria-label="Fim de jogo">
+    <div class="card center" id="gameOverCard">
+      <div class="result-emoji" id="resultEmoji">🏆</div>
       <h2 id="resultTitle">Fim de jogo</h2>
       <p id="resultSub" class="sub"></p>
+
+      <div class="result-stats" id="resultStats"></div>
+      <div class="record-banner hidden" id="recordBanner"></div>
+
       <button id="btnRematch" class="big-btn primary hidden">Jogar de novo</button>
-      <button id="btnBackLobby" class="big-btn">Voltar ao início</button>
+      <button id="btnBackLobby" class="big-btn">Voltar ao menu</button>
     </div>
   </section>
 
 </main>
 
 <footer class="app-footer">
-  <button id="aboutBtn" class="about-btn">ℹ️ Sobre este app</button>
+  <button id="aboutBtn" class="about-btn">Feito por <strong>HollowVoid Guilherme</strong></button>
 </footer>
 
-<div id="aboutModal" class="modal hidden">
+<!-- ================= MODAIS ================= -->
+
+<div id="aboutModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
   <div class="modal-card">
-    <h2>🍬 Doce Duelo</h2>
+    <h2 id="aboutTitle">🍬 Doce Duelo</h2>
     <p class="modal-credit">Feito por<br><strong>HollowVoid Guilherme</strong></p>
-    <p class="modal-sub">Combine 3 ou mais doces para atacar os adversários. Se sua barra encher, você perde! Até 4 jogadores.</p>
-    <button id="closeAbout" class="close-btn">Fechar</button>
+    <p class="modal-sub">
+      Combine 3 ou mais doces para atacar. Quanto maior a cascata, mais forte o ataque.
+      Se a sua barra de pressão encher, você está fora. O último de pé vence.
+    </p>
+    <button class="close-btn" data-close-modal>Fechar</button>
+  </div>
+</div>
+
+<div id="settingsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+  <div class="modal-card">
+    <h2 id="settingsTitle">⚙️ Ajustes</h2>
+
+    <label class="slider-row">
+      <span>Música <b id="musicValue">35%</b></span>
+      <input type="range" id="musicSlider" min="0" max="100" value="35">
+    </label>
+
+    <label class="slider-row">
+      <span>Efeitos <b id="sfxValue">70%</b></span>
+      <input type="range" id="sfxSlider" min="0" max="100" value="70">
+    </label>
+
+    <label class="toggle-row">
+      <span>Menos animação<small>Reduz efeitos e movimento na tela</small></span>
+      <input type="checkbox" id="reducedMotionToggle">
+    </label>
+
+    <label class="toggle-row">
+      <span>Botão de dica<small>Mostra uma jogada possível na partida</small></span>
+      <input type="checkbox" id="hintsToggle" checked>
+    </label>
+
+    <button class="close-btn" data-close-modal>Fechar</button>
+  </div>
+</div>
+
+<div id="statsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="statsTitle">
+  <div class="modal-card">
+    <h2 id="statsTitle">📊 Estatísticas</h2>
+    <div class="stats-grid" id="statsGrid"></div>
+    <button id="btnResetStats" class="mini-btn danger">Zerar estatísticas</button>
+    <button class="close-btn" data-close-modal>Fechar</button>
+  </div>
+</div>
+
+<div id="nameModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="nameTitle">
+  <div class="modal-card">
+    <h2 id="nameTitle">Como quer ser chamado?</h2>
+    <p class="modal-sub">É o nome que os outros jogadores vão ver.</p>
+    <input type="text" id="nameInput" class="text-input" maxlength="14" placeholder="Seu nome"
+           autocomplete="nickname" spellcheck="false">
+    <button id="btnSaveName" class="close-btn">Confirmar</button>
+  </div>
+</div>
+
+<div id="tutorialModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="tutTitle">
+  <div class="modal-card tutorial-card">
+    <h2 id="tutTitle">Como jogar</h2>
+    <ol class="tutorial-list">
+      <li><b>Troque</b> dois doces vizinhos para alinhar 3 ou mais.</li>
+      <li><b>Cascatas</b> valem muito mais: cada explosão em sequência multiplica os pontos.</li>
+      <li><b>4 em linha</b> cria um doce listrado que limpa a fileira inteira.</li>
+      <li><b>Formato de L</b> cria um doce embrulhado que explode em volta.</li>
+      <li><b>5 em linha</b> cria a bomba colorida — troque com qualquer doce para varrer aquela cor.</li>
+      <li>Seus pontos <b>esvaziam sua barra</b>; o que sobra vira ataque no adversário.</li>
+      <li>Barra cheia = eliminado. <b>O último de pé vence.</b></li>
+    </ol>
+    <button class="close-btn" data-close-modal>Entendi, bora!</button>
   </div>
 </div>
 
 <script src="vendor/peerjs.min.js"></script>
-<script src="app.js"></script>
+<script type="module" src="src/main.js"></script>
+<script>
+// Rede de seguranca: se o modulo principal nao carregar (protocolo file://,
+// navegador sem suporte a modulos, arquivo faltando), o jogador ve o motivo em
+// vez de uma tela preta e silenciosa.
+window.addEventListener('error', function (e) {
+  if (!e || !e.target || e.target.tagName !== 'SCRIPT') return;
+  var box = document.getElementById('bootError');
+  if (!box) return;
+  box.classList.remove('hidden');
+  box.innerHTML = '<strong>Não foi possível carregar o jogo.</strong><br>' +
+    'Abra por um servidor (http://localhost), não pelo arquivo direto.';
+}, true);
+</script>
 </body>
 </html>

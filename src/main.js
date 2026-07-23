@@ -1,0 +1,1144 @@
+// Raiz de composicao: amarra core, renderer, audio, sessao e rede.
+//
+// Este arquivo e o unico que conhece o DOM da interface. Toda regra de jogo
+// mora em src/core e src/game; todo desenho do tabuleiro mora em src/render.
+// Se algo aqui comecar a parecer "regra", esta no lugar errado.
+
+import { createRng } from './core/rng.js';
+import {
+  createGrid,
+  trySwap,
+  hasValidMove,
+  findMove,
+  shuffleGrid,
+  serializeTypes,
+  areAdjacent,
+  rowOf,
+  colOf,
+  idx,
+  COLS,
+  ROWS,
+  CELL_COUNT,
+} from './core/board.js';
+import { createRenderer } from './render/renderer.js';
+import { GEM_COLORS } from './render/gems.js';
+import { createAudio } from './audio/audio.js';
+import { createSession } from './game/session.js';
+import { BAR_MAX, streakMultiplier } from './game/balance.js';
+import { DIFFICULTIES } from './game/bot.js';
+import { createNetwork } from './net/peer.js';
+import { storage, suggestName } from './storage.js';
+
+// ---------------------------------------------------------------------------
+// Referencias de DOM
+// ---------------------------------------------------------------------------
+
+const $ = (id) => document.getElementById(id);
+
+const screens = {
+  Menu: $('screenMenu'),
+  Solo: $('screenSolo'),
+  Online: $('screenOnline'),
+  Waiting: $('screenWaiting'),
+  Countdown: $('screenCountdown'),
+  Battle: $('screenBattle'),
+  GameOver: $('screenGameOver'),
+};
+
+const el = {
+  soundBtn: $('btnSound'),
+  soundIcon: $('soundIcon'),
+  heroGems: $('heroGems'),
+  menuPlayerName: $('menuPlayerName'),
+
+  difficultySelect: $('difficultySelect'),
+  difficultyHint: $('difficultyHint'),
+  botCountSelect: $('botCountSelect'),
+  soloRecord: $('soloRecord'),
+
+  playersSelect: $('playersSelect'),
+  joinCodeInput: $('joinCodeInput'),
+  lobbyStatus: $('lobbyStatus'),
+
+  hostCodeBox: $('hostCodeBox'),
+  hostCodeDisplay: $('hostCodeDisplay'),
+  shareCodeBtn: $('shareCodeBtn'),
+  waitingSub: $('waitingSub'),
+  rosterList: $('rosterList'),
+  btnStartGame: $('btnStartGame'),
+
+  countdownNum: $('countdownNum'),
+
+  opponentsRow: $('opponentsRow'),
+  canvas: $('boardCanvas'),
+  myNameLabel: $('myNameLabel'),
+  myScore: $('myScore'),
+  comboBadge: $('comboBadge'),
+  myBarTrack: $('myBarTrack'),
+  myBarFill: $('myBarFill'),
+  myBarCaption: $('myBarCaption'),
+  battleHint: $('battleHint'),
+  srAnnounce: $('srAnnounce'),
+  btnHint: $('btnHint'),
+
+  resultEmoji: $('resultEmoji'),
+  resultTitle: $('resultTitle'),
+  resultSub: $('resultSub'),
+  resultStats: $('resultStats'),
+  recordBanner: $('recordBanner'),
+  btnRematch: $('btnRematch'),
+  gameOverCard: $('gameOverCard'),
+
+  statsGrid: $('statsGrid'),
+  nameInput: $('nameInput'),
+  musicSlider: $('musicSlider'),
+  sfxSlider: $('sfxSlider'),
+  musicValue: $('musicValue'),
+  sfxValue: $('sfxValue'),
+  reducedMotionToggle: $('reducedMotionToggle'),
+  hintsToggle: $('hintsToggle'),
+};
+
+// ---------------------------------------------------------------------------
+// Estado
+// ---------------------------------------------------------------------------
+
+const audio = createAudio();
+const renderer = createRenderer(el.canvas, { reducedMotion: prefersReducedMotion() });
+let network = null;
+let session = null;
+
+let rng = createRng();
+let grid = [];
+let busy = false; // uma animacao de jogada esta em andamento
+let selected = null;
+let drag = null;
+let idleTimer = null;
+let comboTimer = null;
+
+let soloConfig = { difficulty: 'normal', opponents: 1 };
+let onlineConfig = { maxPlayers: 2 };
+let lastMode = 'solo';
+
+const opponentCards = new Map();
+
+function prefersReducedMotion() {
+  const saved = storage.settings.reducedMotion;
+  if (saved !== null && saved !== undefined) return saved;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+// ---------------------------------------------------------------------------
+// Telas
+// ---------------------------------------------------------------------------
+
+function showScreen(name) {
+  for (const key in screens) screens[key].classList.toggle('hidden', key !== name);
+  if (name === 'Battle') {
+    renderer.resize();
+    renderer.start();
+  } else {
+    renderer.stop();
+  }
+}
+
+function announce(text) {
+  el.srAnnounce.textContent = text;
+}
+
+// ---------------------------------------------------------------------------
+// Audio e preferencias
+// ---------------------------------------------------------------------------
+
+function applySettings() {
+  const s = storage.settings;
+  audio.setMusicVolume(s.music);
+  audio.setSfxVolume(s.sfx);
+  audio.setMuted(s.muted);
+  renderer.setReducedMotion(prefersReducedMotion());
+
+  el.musicSlider.value = Math.round(s.music * 100);
+  el.sfxSlider.value = Math.round(s.sfx * 100);
+  el.musicValue.textContent = Math.round(s.music * 100) + '%';
+  el.sfxValue.textContent = Math.round(s.sfx * 100) + '%';
+  el.reducedMotionToggle.checked = prefersReducedMotion();
+  el.hintsToggle.checked = s.hints;
+  el.btnHint.classList.toggle('hidden', !s.hints);
+
+  el.soundIcon.textContent = s.muted ? '🔇' : '🔊';
+  el.soundBtn.classList.toggle('muted', s.muted);
+  el.soundBtn.setAttribute('aria-pressed', String(!s.muted));
+}
+
+// O navegador so libera audio depois de um gesto do usuario.
+function unlockAudioOnce() {
+  audio.unlock();
+  window.removeEventListener('pointerdown', unlockAudioOnce);
+  window.removeEventListener('keydown', unlockAudioOnce);
+}
+window.addEventListener('pointerdown', unlockAudioOnce);
+window.addEventListener('keydown', unlockAudioOnce);
+
+// ---------------------------------------------------------------------------
+// Placar dos adversarios
+// ---------------------------------------------------------------------------
+
+function buildOpponentCard(player) {
+  const card = document.createElement('div');
+  card.className = 'opponent-card';
+  card.dataset.id = player.id;
+
+  const name = document.createElement('div');
+  name.className = 'opponent-name';
+  name.textContent = player.name;
+
+  const board = document.createElement('div');
+  board.className = 'mini-board';
+  board.style.gridTemplateColumns = `repeat(${COLS}, 1fr)`;
+  const cells = new Array(CELL_COUNT);
+  for (let i = 0; i < CELL_COUNT; i++) {
+    const cell = document.createElement('div');
+    cell.className = 'mini-cell';
+    board.appendChild(cell);
+    cells[i] = cell;
+  }
+
+  const track = document.createElement('div');
+  track.className = 'opponent-bar-track';
+  const fill = document.createElement('div');
+  fill.className = 'opponent-bar-fill';
+  track.appendChild(fill);
+
+  const score = document.createElement('div');
+  score.className = 'opponent-score';
+  score.textContent = '0';
+
+  card.append(name, board, track, score);
+  el.opponentsRow.appendChild(card);
+
+  const refs = { card, name, cells, fill, score };
+  opponentCards.set(player.id, refs);
+  return refs;
+}
+
+function renderOpponents(roster) {
+  const others = roster.filter((p) => p.id !== session.localId);
+
+  // Remove cartoes de quem saiu da sala.
+  for (const [id, refs] of opponentCards) {
+    if (!others.some((p) => p.id === id)) {
+      refs.card.remove();
+      opponentCards.delete(id);
+    }
+  }
+
+  let leaderId = null;
+  let leaderScore = -1;
+  for (const p of roster) {
+    if (p.alive && p.score > leaderScore) {
+      leaderScore = p.score;
+      leaderId = p.id;
+    }
+  }
+
+  for (const player of others) {
+    const refs = opponentCards.get(player.id) || buildOpponentCard(player);
+    refs.name.textContent = player.name;
+    refs.score.textContent = String(player.score ?? 0);
+    refs.fill.style.width = Math.min(100, player.bar ?? 0) + '%';
+    refs.card.classList.toggle('eliminated', !player.alive);
+    refs.card.classList.toggle('leader', player.id === leaderId && player.alive);
+    refs.card.classList.toggle('danger', (player.bar ?? 0) > 75 && player.alive);
+
+    if (player.boardTypes) {
+      for (let i = 0; i < CELL_COUNT; i++) {
+        refs.cells[i].style.background = GEM_COLORS[player.boardTypes[i]] || '#2b1a52';
+      }
+    }
+  }
+}
+
+function strikeOpponent(id) {
+  const refs = opponentCards.get(id);
+  if (!refs) return;
+  refs.card.classList.remove('struck');
+  void refs.card.offsetWidth;
+  refs.card.classList.add('struck');
+}
+
+// ---------------------------------------------------------------------------
+// HUD do jogador
+// ---------------------------------------------------------------------------
+
+function updateBarUI() {
+  const value = Math.min(BAR_MAX, session.localBar);
+  const pct = (value / BAR_MAX) * 100;
+  el.myBarFill.style.width = pct + '%';
+  el.myBarCaption.textContent = 'Pressão ' + Math.round(pct) + '%';
+  el.myBarTrack.setAttribute('aria-valuenow', String(Math.round(pct)));
+
+  el.myBarFill.classList.toggle('medio', pct >= 40 && pct < 70);
+  el.myBarFill.classList.toggle('alto', pct >= 70 && pct < 88);
+  el.myBarFill.classList.toggle('critico', pct >= 88);
+
+  const danger = Math.max(0, (pct - 60) / 40);
+  renderer.setDanger(danger);
+  audio.setIntensity(pct / 100);
+}
+
+function updateScoreUI(bump) {
+  el.myScore.textContent = String(session.localScore);
+  if (bump) {
+    el.myScore.classList.remove('bump');
+    void el.myScore.offsetWidth;
+    el.myScore.classList.add('bump');
+  }
+}
+
+function updateComboUI() {
+  const streak = session.comboStreak;
+  if (streak >= 2) {
+    const mult = streakMultiplier(streak);
+    el.comboBadge.textContent = `🔥 x${mult.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}`;
+    el.comboBadge.classList.remove('hidden', 'pop');
+    void el.comboBadge.offsetWidth;
+    el.comboBadge.classList.add('pop');
+  } else {
+    el.comboBadge.classList.add('hidden');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Jogada
+// ---------------------------------------------------------------------------
+
+function soundForActivation(special) {
+  if (special === 1 || special === 2) return 'striped';
+  if (special === 3) return 'wrapped';
+  if (special === 4) return 'colorBomb';
+  return 'wrapped';
+}
+
+async function playPhases(phases) {
+  for (const phase of phases) {
+    audio.play('match', phase.cascade, phase.cleared.length);
+
+    for (const act of phase.activations) audio.play(soundForActivation(act.special));
+    if (phase.created.length) audio.play('createSpecial');
+
+    // A intensidade do tranco cresce com a cascata: uma cascata de 6 tem que
+    // SENTIR diferente de uma trinca simples, senao o jogador nao percebe que
+    // fez algo grande.
+    if (phase.cascade >= 2 || phase.activations.length) {
+      renderer.shake(Math.min(16, 2.5 * phase.cascade + phase.activations.length * 2.5));
+    }
+    if (phase.cascade >= 4) {
+      renderer.flash('rgba(255,255,255,0.30)', 0.3);
+      announce(`Cascata ${phase.cascade}!`);
+    }
+
+    await renderer.animatePhase(phase);
+  }
+}
+
+async function attemptMove(a, b) {
+  if (busy || !session || !session.active) return;
+  if (!areAdjacent(a, b)) return;
+
+  busy = true;
+  selected = null;
+  renderer.setSelection(null);
+  renderer.setHint(null);
+  resetIdleTimer();
+
+  const result = trySwap(grid, a, b, rng);
+
+  if (!result.ok) {
+    audio.play('swapFail');
+    await renderer.animateSwapRevert(a, b);
+    busy = false;
+    return;
+  }
+
+  audio.play('swap');
+  await renderer.animateSwap(a, b);
+  await playPhases(result.phases);
+
+  const points = session.reportLocalPoints(result.points, result.cascades);
+  if (points > 0) {
+    renderer.floatText(`+${points}`, b, '#ffe27a', result.cascades >= 3);
+  }
+
+  // Tabuleiro sem jogada possivel: embaralha em vez de travar o jogador.
+  if (!hasValidMove(grid)) {
+    announce('Sem jogadas. Embaralhando o tabuleiro.');
+    el.battleHint.textContent = 'Sem jogadas — embaralhando!';
+    shuffleGrid(grid, rng);
+    renderer.setGrid(grid);
+    await renderer.introDrop();
+    el.battleHint.textContent = 'Arraste um doce para o vizinho para trocar';
+    session.broadcastLocalState();
+  }
+
+  busy = false;
+}
+
+// ---------------------------------------------------------------------------
+// Entrada (toque e mouse)
+// ---------------------------------------------------------------------------
+
+const DRAG_THRESHOLD = 12;
+
+el.canvas.addEventListener('pointerdown', (e) => {
+  if (busy || !session || !session.active) return;
+  const cell = renderer.pointerToCell(e.clientX, e.clientY);
+  if (cell === null) return;
+  el.canvas.setPointerCapture(e.pointerId);
+  drag = { start: cell, x: e.clientX, y: e.clientY, moved: false };
+});
+
+el.canvas.addEventListener('pointermove', (e) => {
+  if (!drag || drag.moved || busy) return;
+  const dx = e.clientX - drag.x;
+  const dy = e.clientY - drag.y;
+  if (Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
+
+  drag.moved = true;
+  const r = rowOf(drag.start);
+  const c = colOf(drag.start);
+  let tr = r;
+  let tc = c;
+  if (Math.abs(dx) > Math.abs(dy)) tc += dx > 0 ? 1 : -1;
+  else tr += dy > 0 ? 1 : -1;
+
+  if (tr >= 0 && tr < ROWS && tc >= 0 && tc < COLS) attemptMove(drag.start, idx(tr, tc));
+  drag = null;
+  selected = null;
+  renderer.setSelection(null);
+});
+
+el.canvas.addEventListener('pointerup', (e) => {
+  if (!drag || drag.moved) {
+    drag = null;
+    return;
+  }
+  const cell = renderer.pointerToCell(e.clientX, e.clientY);
+  drag = null;
+  if (cell === null || busy) return;
+
+  // Toque: primeiro seleciona, segundo troca (se for vizinho).
+  if (selected === null) {
+    selected = cell;
+    audio.play('tap');
+  } else if (selected === cell) {
+    selected = null;
+  } else if (areAdjacent(selected, cell)) {
+    const from = selected;
+    selected = null;
+    attemptMove(from, cell);
+    return;
+  } else {
+    selected = cell;
+    audio.play('tap');
+  }
+  renderer.setSelection(selected);
+});
+
+el.canvas.addEventListener('pointercancel', () => {
+  drag = null;
+});
+
+// Dica automatica depois de um tempo parado — reduz a frustracao de travar.
+function resetIdleTimer() {
+  if (idleTimer) clearTimeout(idleTimer);
+  if (!storage.settings.hints) return;
+  idleTimer = setTimeout(() => {
+    if (!busy && session && session.active) showHint();
+  }, 7000);
+}
+
+function showHint() {
+  const move = findMove(grid);
+  if (move) {
+    renderer.setHint(move);
+    setTimeout(() => renderer.setHint(null), 2600);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Ciclo da partida
+// ---------------------------------------------------------------------------
+
+function createSessionWithHooks() {
+  return createSession({
+    getLocalBoardTypes: () => serializeTypes(grid),
+
+    onRosterChange: (roster) => {
+      renderOpponents(roster);
+      renderRosterList(roster);
+    },
+
+    onLocalScore: (points, total, streak) => {
+      updateScoreUI(true);
+      updateBarUI();
+      updateComboUI();
+      if (streak >= 3) audio.play('attackSend');
+    },
+
+    onLocalDamage: (amount) => {
+      updateBarUI();
+      renderer.shake(Math.min(22, 6 + amount * 0.55));
+      renderer.flash('rgba(255,60,60,0.42)', 0.5);
+      audio.play('attackTake');
+      if (navigator.vibrate) navigator.vibrate(40);
+      announce('Você levou um ataque!');
+    },
+
+    onAttackSent: (fromId, targetId) => {
+      if (fromId === session.localId) strikeOpponent(targetId);
+    },
+
+    onPlayerEliminated: (id) => {
+      if (id !== session.localId) {
+        audio.play('eliminate');
+        const p = session.roster.find((x) => x.id === id);
+        if (p) announce(`${p.name} foi eliminado!`);
+      }
+    },
+
+    onLocalEliminated: () => {
+      busy = true;
+    },
+
+    onComboReset: () => updateComboUI(),
+
+    onGameEnd: (winnerId, summary) => finishMatch(winnerId, summary),
+
+    onJoinedRoom: () => {
+      showScreen('Waiting');
+      el.hostCodeBox.classList.add('hidden');
+    },
+
+    onRefused: (motivo) => {
+      setLobbyStatus(motivo, true);
+      if (network) network.destroy();
+      showScreen('Online');
+    },
+
+    onStart: (semente) => startCountdown(semente),
+  });
+}
+
+function startCountdown(semente) {
+  showScreen('Countdown');
+  let n = 3;
+  el.countdownNum.textContent = String(n);
+  audio.play('countdown');
+
+  const tick = setInterval(() => {
+    n -= 1;
+    if (n <= 0) {
+      clearInterval(tick);
+      audio.play('countdown', true);
+      beginBattle(semente);
+      return;
+    }
+    el.countdownNum.textContent = String(n);
+    el.countdownNum.style.animation = 'none';
+    void el.countdownNum.offsetWidth;
+    el.countdownNum.style.animation = '';
+    audio.play('countdown');
+  }, 900);
+}
+
+function beginBattle(semente) {
+  rng = createRng(semente);
+  grid = createGrid(rng);
+
+  busy = false;
+  selected = null;
+
+  el.myNameLabel.textContent = storage.name || 'Você';
+  updateScoreUI(false);
+  updateBarUI();
+  updateComboUI();
+  el.battleHint.textContent = 'Arraste um doce para o vizinho para trocar';
+
+  showScreen('Battle');
+  renderer.setGrid(grid);
+  renderer.setSelection(null);
+  renderer.setHint(null);
+  renderOpponents(session.roster);
+
+  renderer.introDrop().then(() => {
+    session.launchBots();
+    session.broadcastLocalState();
+    resetIdleTimer();
+  });
+
+  audio.startMusic();
+
+  if (comboTimer) clearInterval(comboTimer);
+  comboTimer = setInterval(() => session && session.decayCombo(), 900);
+}
+
+function finishMatch(winnerId, summary) {
+  busy = true;
+  if (idleTimer) clearTimeout(idleTimer);
+  if (comboTimer) clearInterval(comboTimer);
+  audio.stopMusic();
+  audio.setIntensity(0);
+
+  const won = summary.won;
+  const records = storage.recordMatch({
+    won,
+    score: summary.score,
+    bestCombo: summary.bestCombo,
+    bestCascade: summary.bestCascade,
+    solo: summary.solo,
+  });
+
+  el.resultEmoji.textContent = won ? '🏆' : '💥';
+  el.resultTitle.textContent = won ? 'Você venceu!' : 'Você perdeu';
+  el.resultTitle.className = won ? 'win' : 'lose';
+
+  if (won) {
+    el.resultSub.textContent = 'Último de pé. Mandou bem!';
+    audio.play('victory');
+  } else {
+    const vencedor = session.roster.find((p) => p.id === winnerId);
+    el.resultSub.textContent = vencedor ? `${vencedor.name} venceu a partida.` : 'A partida acabou.';
+    audio.play('defeat');
+    el.gameOverCard.classList.remove('shake');
+    void el.gameOverCard.offsetWidth;
+    el.gameOverCard.classList.add('shake');
+  }
+
+  el.resultStats.innerHTML = '';
+  const stats = [
+    { value: summary.score, label: 'Pontos' },
+    { value: 'x' + summary.bestCombo, label: 'Maior combo' },
+    { value: summary.bestCascade, label: 'Maior cascata' },
+    { value: storage.stats.wins, label: 'Vitórias totais' },
+  ];
+  for (const stat of stats) {
+    const box = document.createElement('div');
+    box.className = 'stat-box';
+    box.innerHTML = `<span class="stat-value">${stat.value}</span><span class="stat-label">${stat.label}</span>`;
+    el.resultStats.appendChild(box);
+  }
+
+  if (records.length) {
+    // "a e b e c" fica ruim; o certo em portugues e "a, b e c".
+    const lista =
+      records.length > 1 ? records.slice(0, -1).join(', ') + ' e ' + records[records.length - 1] : records[0];
+    el.recordBanner.textContent = '🎉 Novo recorde de ' + lista + '!';
+    el.recordBanner.classList.remove('hidden');
+  } else {
+    el.recordBanner.classList.add('hidden');
+  }
+
+  // Revanche: no solo sempre; no online, so quem e anfitriao pode reiniciar.
+  const podeRevanche = session.isSolo || session.isHost;
+  el.btnRematch.classList.toggle('hidden', !podeRevanche);
+
+  showScreen('GameOver');
+  if (won) spawnConfetti();
+}
+
+function spawnConfetti() {
+  if (prefersReducedMotion()) return;
+  const container = document.createElement('div');
+  container.style.cssText = 'position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:70';
+  for (let i = 0; i < 44; i++) {
+    const piece = document.createElement('div');
+    const color = GEM_COLORS[i % GEM_COLORS.length];
+    piece.style.cssText = `position:absolute;top:-14px;left:${Math.random() * 100}%;width:9px;height:15px;border-radius:2px;background:${color};animation:confettiFall ${1.7 + Math.random() * 1.3}s ease-in ${Math.random() * 0.5}s forwards`;
+    container.appendChild(piece);
+  }
+  document.body.appendChild(container);
+  setTimeout(() => container.remove(), 3600);
+}
+
+// Keyframe injetado aqui porque so o confete usa — nao vale poluir o CSS.
+const confettiStyle = document.createElement('style');
+confettiStyle.textContent =
+  '@keyframes confettiFall{0%{transform:translateY(0) rotate(0);opacity:1}100%{transform:translateY(110vh) rotate(640deg);opacity:.8}}';
+document.head.appendChild(confettiStyle);
+
+// ---------------------------------------------------------------------------
+// Modo solo
+// ---------------------------------------------------------------------------
+
+function buildDifficultyButtons() {
+  el.difficultySelect.innerHTML = '';
+  for (const [key, config] of Object.entries(DIFFICULTIES)) {
+    const btn = document.createElement('button');
+    btn.className = 'option-btn' + (key === soloConfig.difficulty ? ' active' : '');
+    btn.textContent = config.label;
+    btn.dataset.key = key;
+    btn.setAttribute('role', 'radio');
+    btn.setAttribute('aria-checked', String(key === soloConfig.difficulty));
+    btn.addEventListener('click', () => {
+      soloConfig.difficulty = key;
+      audio.play('tap');
+      buildDifficultyButtons();
+    });
+    el.difficultySelect.appendChild(btn);
+  }
+  el.difficultyHint.textContent = DIFFICULTIES[soloConfig.difficulty].descricao;
+}
+
+function startSolo() {
+  lastMode = 'solo';
+  session = createSessionWithHooks();
+  session.setupSolo({
+    playerName: storage.name || 'Você',
+    opponents: soloConfig.opponents,
+    difficulty: soloConfig.difficulty,
+  });
+  session.start();
+}
+
+// ---------------------------------------------------------------------------
+// Modo online
+// ---------------------------------------------------------------------------
+
+function setLobbyStatus(text, isError = false) {
+  el.lobbyStatus.textContent = text;
+  el.lobbyStatus.classList.toggle('erro', isError);
+}
+
+function createNetworkWithHooks() {
+  return createNetwork({
+    onHosting: (code) => {
+      el.hostCodeDisplay.textContent = code;
+      el.hostCodeBox.classList.remove('hidden');
+      el.shareCodeBtn.classList.toggle('hidden', !navigator.share);
+      showScreen('Waiting');
+      setLobbyStatus('');
+    },
+
+    onPlayerJoined: (id, metadata) => {
+      session.addNetworkPlayer(id, metadata);
+      audio.play('tap');
+    },
+
+    onPlayerLeft: (id) => session.removeNetworkPlayer(id),
+
+    onMessage: (fromId, msg) => session.handleMessage(fromId, msg),
+
+    onConnected: () => setLobbyStatus('Conectado! Aguardando o anfitrião...'),
+
+    onError: (mensagem) => {
+      setLobbyStatus(mensagem, true);
+      resetOnlineButtons();
+      showScreen('Online');
+    },
+
+    onDisconnected: (mensagem) => {
+      if (session && session.active) {
+        session.abandon();
+        el.resultEmoji.textContent = '📡';
+        el.resultTitle.textContent = 'Conexão perdida';
+        el.resultTitle.className = 'lose';
+        el.resultSub.textContent = mensagem;
+        el.resultStats.innerHTML = '';
+        el.recordBanner.classList.add('hidden');
+        el.btnRematch.classList.add('hidden');
+        audio.stopMusic();
+        showScreen('GameOver');
+      } else {
+        setLobbyStatus(mensagem, true);
+        resetOnlineButtons();
+        showScreen('Online');
+      }
+    },
+  });
+}
+
+function resetOnlineButtons() {
+  $('btnCreate').disabled = false;
+  $('btnJoin').disabled = false;
+  el.hostCodeBox.classList.add('hidden');
+}
+
+function hostRoom() {
+  lastMode = 'online';
+  network = createNetworkWithHooks();
+  session = createSessionWithHooks();
+  session.setupOnline({ network, hostMode: true, playerName: storage.name || 'Anfitrião' });
+  $('btnCreate').disabled = true;
+  $('btnJoin').disabled = true;
+  setLobbyStatus('Criando sala...');
+  network.host(onlineConfig.maxPlayers);
+}
+
+function joinRoom() {
+  const code = el.joinCodeInput.value.trim().toUpperCase();
+  if (!code) {
+    setLobbyStatus('Digite o código da sala.', true);
+    return;
+  }
+  lastMode = 'online';
+  network = createNetworkWithHooks();
+  session = createSessionWithHooks();
+  session.setupOnline({ network, hostMode: false, playerName: storage.name || 'Jogador' });
+  $('btnCreate').disabled = true;
+  $('btnJoin').disabled = true;
+  setLobbyStatus('Conectando...');
+  network.join(code, { name: storage.name || 'Jogador' });
+}
+
+function renderRosterList(roster) {
+  if (screens.Waiting.classList.contains('hidden')) return;
+  el.rosterList.innerHTML = '';
+  for (const player of roster) {
+    const li = document.createElement('li');
+    const tag = player.id === session.localId ? 'você' : player.isBot ? 'máquina' : '';
+    li.innerHTML = `<span>${escapeHtml(player.name)}</span><span class="tag">${tag}</span>`;
+    el.rosterList.appendChild(li);
+  }
+
+  if (session.isHost && !session.isSolo) {
+    const total = roster.length;
+    el.waitingSub.textContent = `Jogadores na sala: ${total} de ${onlineConfig.maxPlayers}`;
+    el.btnStartGame.classList.toggle('hidden', total < 2);
+  } else {
+    el.waitingSub.textContent = 'Aguardando o anfitrião iniciar...';
+    el.btnStartGame.classList.add('hidden');
+  }
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = String(text);
+  return div.innerHTML;
+}
+
+function leaveRoom() {
+  if (session) session.abandon();
+  if (network) network.destroy();
+  network = null;
+  session = null;
+  resetOnlineButtons();
+  setLobbyStatus('');
+}
+
+// ---------------------------------------------------------------------------
+// Modais
+// ---------------------------------------------------------------------------
+
+function openModal(id) {
+  $(id).classList.remove('hidden');
+}
+
+function closeModal(id) {
+  $(id).classList.add('hidden');
+}
+
+document.querySelectorAll('[data-close-modal]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const modal = btn.closest('.modal');
+    if (modal) modal.classList.add('hidden');
+  });
+});
+
+document.querySelectorAll('.modal').forEach((modal) => {
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) modal.classList.add('hidden');
+  });
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  document.querySelectorAll('.modal:not(.hidden)').forEach((m) => m.classList.add('hidden'));
+});
+
+function showStats() {
+  const s = storage.stats;
+  const winRate = s.games > 0 ? Math.round((s.wins / s.games) * 100) : 0;
+  const items = [
+    { value: s.games, label: 'Partidas' },
+    { value: s.wins, label: 'Vitórias' },
+    { value: winRate + '%', label: 'Aproveitamento' },
+    { value: s.bestScore, label: 'Melhor pontuação' },
+    { value: 'x' + s.bestCombo, label: 'Maior combo' },
+    { value: s.bestCascade, label: 'Maior cascata' },
+  ];
+  el.statsGrid.innerHTML = '';
+  for (const item of items) {
+    const box = document.createElement('div');
+    box.className = 'stat-box';
+    box.innerHTML = `<span class="stat-value">${item.value}</span><span class="stat-label">${item.label}</span>`;
+    el.statsGrid.appendChild(box);
+  }
+  openModal('statsModal');
+}
+
+function refreshMenuName() {
+  el.menuPlayerName.textContent = storage.name || '—';
+  const best = storage.stats.soloBest;
+  el.soloRecord.textContent = best > 0 ? `Seu recorde no solo: ${best} pontos` : '';
+}
+
+// ---------------------------------------------------------------------------
+// Ligacoes da interface
+// ---------------------------------------------------------------------------
+
+$('btnPlaySolo').addEventListener('click', () => {
+  audio.play('tap');
+  buildDifficultyButtons();
+  refreshMenuName();
+  showScreen('Solo');
+});
+
+$('btnPlayOnline').addEventListener('click', () => {
+  audio.play('tap');
+  setLobbyStatus('');
+  showScreen('Online');
+});
+
+$('btnStats').addEventListener('click', () => {
+  audio.play('tap');
+  showStats();
+});
+
+$('btnSettings').addEventListener('click', () => {
+  audio.play('tap');
+  openModal('settingsModal');
+});
+
+document.querySelectorAll('[data-back]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    audio.play('tap');
+    leaveRoom();
+    showScreen(btn.dataset.back);
+  });
+});
+
+el.botCountSelect.addEventListener('click', (e) => {
+  const btn = e.target.closest('.seg-btn');
+  if (!btn) return;
+  soloConfig.opponents = Number(btn.dataset.n);
+  el.botCountSelect.querySelectorAll('.seg-btn').forEach((b) => {
+    b.classList.toggle('active', b === btn);
+    b.setAttribute('aria-checked', String(b === btn));
+  });
+  audio.play('tap');
+});
+
+el.playersSelect.addEventListener('click', (e) => {
+  const btn = e.target.closest('.seg-btn');
+  if (!btn) return;
+  onlineConfig.maxPlayers = Number(btn.dataset.n);
+  el.playersSelect.querySelectorAll('.seg-btn').forEach((b) => {
+    b.classList.toggle('active', b === btn);
+    b.setAttribute('aria-checked', String(b === btn));
+  });
+  audio.play('tap');
+});
+
+$('btnStartSolo').addEventListener('click', () => {
+  audio.unlock();
+  startSolo();
+});
+
+$('btnCreate').addEventListener('click', () => {
+  audio.unlock();
+  hostRoom();
+});
+
+$('btnJoin').addEventListener('click', () => {
+  audio.unlock();
+  joinRoom();
+});
+
+el.joinCodeInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') joinRoom();
+});
+
+$('btnStartGame').addEventListener('click', () => {
+  if (!session || !session.isHost) return;
+  session.start();
+});
+
+$('btnCancelWait').addEventListener('click', () => {
+  audio.play('tap');
+  leaveRoom();
+  showScreen('Menu');
+});
+
+$('copyCodeBtn').addEventListener('click', async () => {
+  const code = el.hostCodeDisplay.textContent;
+  try {
+    await navigator.clipboard.writeText(code);
+    const btn = $('copyCodeBtn');
+    btn.textContent = '✅ Copiado!';
+    setTimeout(() => (btn.textContent = '📋 Copiar'), 1600);
+  } catch {
+    setLobbyStatus('Não consegui copiar. Anote: ' + code);
+  }
+});
+
+el.shareCodeBtn.addEventListener('click', () => {
+  const code = el.hostCodeDisplay.textContent;
+  navigator
+    .share({
+      title: 'Doce Duelo',
+      text: `Bora jogar Doce Duelo! Código da sala: ${code}`,
+      url: location.href,
+    })
+    .catch(() => {});
+});
+
+$('btnQuit').addEventListener('click', () => {
+  if (!confirm('Sair da partida?')) return;
+  leaveRoom();
+  audio.stopMusic();
+  showScreen('Menu');
+});
+
+el.btnHint.addEventListener('click', () => {
+  if (busy || !session || !session.active) return;
+  audio.play('tap');
+  showHint();
+});
+
+el.btnRematch.addEventListener('click', () => {
+  audio.play('tap');
+  if (lastMode === 'solo') startSolo();
+  else if (session && session.isHost) session.start();
+});
+
+$('btnBackLobby').addEventListener('click', () => {
+  audio.play('tap');
+  leaveRoom();
+  showScreen('Menu');
+});
+
+el.soundBtn.addEventListener('click', () => {
+  const muted = !storage.settings.muted;
+  storage.updateSettings({ muted });
+  applySettings();
+  if (!muted) {
+    audio.unlock();
+    audio.play('tap');
+    if (session && session.active) audio.startMusic();
+  }
+});
+
+el.musicSlider.addEventListener('input', () => {
+  const value = Number(el.musicSlider.value) / 100;
+  storage.updateSettings({ music: value });
+  audio.setMusicVolume(value);
+  el.musicValue.textContent = el.musicSlider.value + '%';
+});
+
+el.sfxSlider.addEventListener('input', () => {
+  const value = Number(el.sfxSlider.value) / 100;
+  storage.updateSettings({ sfx: value });
+  audio.setSfxVolume(value);
+  el.sfxValue.textContent = el.sfxSlider.value + '%';
+});
+
+el.sfxSlider.addEventListener('change', () => audio.play('match', 2, 3));
+
+el.reducedMotionToggle.addEventListener('change', () => {
+  storage.updateSettings({ reducedMotion: el.reducedMotionToggle.checked });
+  renderer.setReducedMotion(el.reducedMotionToggle.checked);
+});
+
+el.hintsToggle.addEventListener('change', () => {
+  storage.updateSettings({ hints: el.hintsToggle.checked });
+  el.btnHint.classList.toggle('hidden', !el.hintsToggle.checked);
+});
+
+$('btnResetStats').addEventListener('click', () => {
+  if (!confirm('Zerar todas as estatísticas? Isso não pode ser desfeito.')) return;
+  const nome = storage.name;
+  storage.reset();
+  storage.setName(nome);
+  applySettings();
+  refreshMenuName();
+  showStats();
+});
+
+$('aboutBtn').addEventListener('click', () => openModal('aboutModal'));
+
+$('btnEditName').addEventListener('click', () => {
+  el.nameInput.value = storage.name;
+  openModal('nameModal');
+  setTimeout(() => el.nameInput.focus(), 120);
+});
+
+$('btnSaveName').addEventListener('click', saveName);
+el.nameInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') saveName();
+});
+
+function saveName() {
+  const value = el.nameInput.value.trim() || suggestName();
+  storage.setName(value);
+  refreshMenuName();
+  closeModal('nameModal');
+}
+
+// ---------------------------------------------------------------------------
+// Redimensionamento
+// ---------------------------------------------------------------------------
+
+let resizeTimer = null;
+function handleResize() {
+  if (resizeTimer) clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (!screens.Battle.classList.contains('hidden')) renderer.resize();
+  }, 120);
+}
+
+window.addEventListener('resize', handleResize);
+window.addEventListener('orientationchange', handleResize);
+
+// Aba escondida: pausa a musica para nao tocar no bolso do jogador.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) audio.stopMusic();
+  else if (session && session.active) audio.startMusic();
+});
+
+// ---------------------------------------------------------------------------
+// Inicializacao
+// ---------------------------------------------------------------------------
+
+function buildHeroGems() {
+  el.heroGems.innerHTML = '';
+  GEM_COLORS.slice(0, 5).forEach((color, i) => {
+    const gem = document.createElement('div');
+    gem.className = 'hero-gem';
+    gem.style.background = `linear-gradient(145deg, ${color}, ${color}88)`;
+    gem.style.animationDelay = i * 0.16 + 's';
+    el.heroGems.appendChild(gem);
+  });
+}
+
+function boot() {
+  if (!storage.name) storage.setName(suggestName());
+
+  applySettings();
+  buildHeroGems();
+  buildDifficultyButtons();
+  refreshMenuName();
+  showScreen('Menu');
+
+  if (!storage.tutorialSeen) {
+    openModal('tutorialModal');
+    storage.markTutorialSeen();
+  }
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
+}
+
+boot();

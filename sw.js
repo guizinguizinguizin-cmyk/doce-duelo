@@ -37,6 +37,8 @@ const ASSETS = [
   './src/game/attack.js',
   './src/game/match.js',
   './src/game/replay.js',
+  './src/game/rating.js',
+  './src/game/ranks.js',
   './src/net/peer.js',
 ];
 

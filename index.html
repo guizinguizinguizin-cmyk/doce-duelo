@@ -65,6 +65,15 @@
       </button>
     </div>
 
+    <button id="btnRankCard" class="rank-card">
+      <span class="rank-selo" id="rankSelo"></span>
+      <span class="rank-texto">
+        <strong id="rankNome">—</strong>
+        <small id="rankDetalhe"></small>
+        <span class="rank-barra"><i id="rankProgresso"></i></span>
+      </span>
+    </button>
+
     <button id="btnEditName" class="name-chip">
       Jogando como <strong id="menuPlayerName">—</strong> <span class="pencil" data-icone="editar"></span>
     </button>
@@ -195,6 +204,15 @@
       <div class="result-emoji" id="resultEmoji">🏆</div>
       <h2 id="resultTitle">Fim de jogo</h2>
       <p id="resultSub" class="sub"></p>
+
+      <div class="rank-resultado hidden" id="rankResultado">
+        <span class="rank-selo" id="rankResultadoSelo"></span>
+        <span class="rank-resultado-texto">
+          <strong id="rankResultadoNome"></strong>
+          <span id="rankResultadoDelta" class="rank-delta"></span>
+          <small id="rankResultadoMotivo"></small>
+        </span>
+      </div>
 
       <div class="result-stats" id="resultStats"></div>
       <div class="record-banner hidden" id="recordBanner"></div>

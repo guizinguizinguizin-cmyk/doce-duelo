@@ -32,6 +32,8 @@ import { PRESSURE_MAX, streakMultiplier } from './game/balance.js';
 import { DIFFICULTIES } from './game/bot.js';
 import { createNetwork } from './net/peer.js';
 import { storage, suggestName } from './storage.js';
+import { notaExibida, estaCalibrando, chanceDeVitoria } from './game/rating.js';
+import { rankDe, seloDoRank, explicarVariacao, resultadoConta, NOTA_DOS_BOTS } from './game/ranks.js';
 
 // ---------------------------------------------------------------------------
 // Referencias de DOM
@@ -92,6 +94,15 @@ const el = {
   resultSub: $('resultSub'),
   resultStats: $('resultStats'),
   recordBanner: $('recordBanner'),
+  rankSelo: $('rankSelo'),
+  rankNome: $('rankNome'),
+  rankDetalhe: $('rankDetalhe'),
+  rankProgresso: $('rankProgresso'),
+  rankResultado: $('rankResultado'),
+  rankResultadoSelo: $('rankResultadoSelo'),
+  rankResultadoNome: $('rankResultadoNome'),
+  rankResultadoDelta: $('rankResultadoDelta'),
+  rankResultadoMotivo: $('rankResultadoMotivo'),
   btnRematch: $('btnRematch'),
   btnReplay: $('btnReplay'),
   debugPanel: $('debugPanel'),
@@ -762,6 +773,40 @@ function finishMatch(winnerId, summary) {
   document.body.classList.remove('perigo-perigo', 'perigo-critico');
   alertaAnterior = 'normal';
 
+  // A nota so muda contra adversario de forca CONHECIDA. Bot tem nota fixa
+  // por dificuldade; humano online entra como desconhecido, porque sem
+  // servidor nao ha como saber a nota dele (e o que ele mandasse pela rede
+  // seria auto-declarado, ou seja, forjavel).
+  const adversario = session.isSolo
+    ? NOTA_DOS_BOTS[soloConfig.difficulty] || NOTA_DOS_BOTS.normal
+    : { rating: 1500, desvio: 200 };
+
+  const notaAntes = storage.rating;
+  const chance = chanceDeVitoria(notaAntes, adversario);
+  const calibrando = estaCalibrando(notaAntes);
+  const regra = resultadoConta({
+    notaAtual: notaExibida(notaAntes),
+    adversario,
+    venceu: summary.won,
+    contraBot: session.isSolo,
+  });
+
+  const { depois: notaDepois } = storage.registrarResultado({
+    venceu: summary.won,
+    adversario,
+    modo: session.isSolo ? 'solo' : 'online',
+    nomeAdversario: session.roster.find((p) => p.id !== session.localId)?.name || null,
+    contaParaNota: regra.conta,
+  });
+  mostrarVariacaoDeRank({
+    notaAntes,
+    notaDepois,
+    venceu: summary.won,
+    chance,
+    calibrando,
+    motivoBloqueio: regra.motivo,
+  });
+
   const won = summary.won;
   const records = storage.recordMatch({
     won,
@@ -830,6 +875,37 @@ function finishMatch(winnerId, summary) {
 
   showScreen('GameOver');
   if (won) spawnConfetti();
+}
+
+/**
+ * Painel de rank na tela de fim.
+ *
+ * Explica POR QUE a nota mexeu daquele tanto. Ver o rank variar sem motivo
+ * parece arbitrario, e um dos pilares do jogo e o jogador entender o proprio
+ * resultado — isso vale para a nota tambem, nao so para a partida.
+ */
+function mostrarVariacaoDeRank({ notaAntes, notaDepois, venceu, chance, calibrando, motivoBloqueio }) {
+  const antes = notaExibida(notaAntes);
+  const depois = notaExibida(notaDepois);
+  const diferenca = depois - antes;
+  const rank = rankDe(depois);
+  const rankAntigo = rankDe(antes);
+
+  el.rankResultadoSelo.innerHTML = seloDoRank(rank, 46);
+  el.rankResultadoNome.textContent = rank.nome;
+  el.rankResultadoNome.style.color = rank.cor;
+
+  const sinal = diferenca > 0 ? '+' : '';
+  el.rankResultadoDelta.textContent = `${sinal}${diferenca}`;
+  el.rankResultadoDelta.className =
+    'rank-delta ' + (diferenca > 0 ? 'sobe' : diferenca < 0 ? 'desce' : '');
+
+  let motivo = motivoBloqueio || explicarVariacao({ venceu, chance, diferenca, calibrando });
+  if (rank.indice > rankAntigo.indice) motivo = `Subiu para ${rank.nome}!`;
+  else if (rank.indice < rankAntigo.indice) motivo = `Caiu para ${rank.nome}.`;
+  el.rankResultadoMotivo.textContent = motivo;
+
+  el.rankResultado.classList.remove('hidden');
 }
 
 function spawnConfetti() {
@@ -1074,6 +1150,33 @@ function showStats() {
   openModal('statsModal');
 }
 
+/**
+ * Cartao de rank do menu.
+ *
+ * Mostra o RANK, nunca o MMR — numero cru vira obsessao e leitura errada
+ * ("perdi 8 pontos numa partida que joguei bem"). Durante a calibragem o
+ * cartao diz isso com todas as letras, senao o jogador acha que o rank baixo
+ * inicial e um julgamento sobre ele.
+ */
+function refreshRankCard() {
+  const nota = storage.rating;
+  const rank = rankDe(notaExibida(nota));
+
+  el.rankSelo.innerHTML = seloDoRank(rank, 44);
+  el.rankNome.textContent = rank.nome;
+  el.rankNome.style.color = rank.cor;
+  el.rankProgresso.style.width = Math.round(rank.progresso * 100) + '%';
+  el.rankProgresso.style.background = rank.cor;
+
+  if (estaCalibrando(nota)) {
+    el.rankDetalhe.textContent = `Calibrando — ${nota.partidas} partida(s)`;
+  } else if (rank.proximo) {
+    el.rankDetalhe.textContent = `Faltam ${rank.faltam} para ${rank.proximo.nome}`;
+  } else {
+    el.rankDetalhe.textContent = 'Rank máximo';
+  }
+}
+
 function refreshMenuName() {
   el.menuPlayerName.textContent = storage.name || '—';
   const best = storage.stats.soloBest;
@@ -1226,7 +1329,13 @@ el.btnRematch.addEventListener('click', () => {
 $('btnBackLobby').addEventListener('click', () => {
   audio.play('tap');
   leaveRoom();
+  refreshRankCard();
   showScreen('Menu');
+});
+
+$('btnRankCard').addEventListener('click', () => {
+  audio.play('tap');
+  showStats();
 });
 
 el.soundBtn.addEventListener('click', () => {
@@ -1361,6 +1470,9 @@ function buildHeroGems() {
 
 function boot() {
   if (!storage.name) storage.setName(suggestName());
+  // Quem sumiu por semanas volta com mais incerteza, nao com a nota antiga
+  // tratada como verdade.
+  storage.aplicarAfastamento();
 
   // Antes de applySettings: ela ja troca o icone de som conforme o estado.
   aplicarIcones();
@@ -1368,6 +1480,7 @@ function boot() {
   buildHeroGems();
   buildDifficultyButtons();
   refreshMenuName();
+  refreshRankCard();
   showScreen('Menu');
 
   if (!storage.tutorialSeen) {

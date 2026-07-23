@@ -4,7 +4,12 @@
 // lanca excecao ao escrever, e um jogo nao pode morrer porque nao conseguiu
 // salvar o volume da musica.
 
+import { novoJogador, atualizar, afastamento, notaExibida } from './game/rating.js';
+
 const KEY = 'doceduelo:v2';
+
+/** Quantas partidas o historico guarda, para o perfil nao crescer sem fim. */
+const HISTORICO_MAXIMO = 50;
 
 const DEFAULTS = {
   name: '',
@@ -27,6 +32,10 @@ const DEFAULTS = {
     debug: false,
   },
   tutorialSeen: false,
+  /** Nota competitiva (Glicko-2). Ver src/game/rating.js. */
+  rating: null,
+  /** Ultimas partidas, para o historico e para medir afastamento. */
+  historico: [],
 };
 
 function deepMerge(base, extra) {
@@ -116,6 +125,65 @@ export const storage = {
 
     persist();
     return records;
+  },
+
+  /** Nota atual. Criada na primeira leitura, para perfis antigos migrarem sozinhos. */
+  get rating() {
+    if (!cache.rating) {
+      cache.rating = novoJogador();
+      persist();
+    }
+    return cache.rating;
+  },
+
+  get historico() {
+    return cache.historico || [];
+  },
+
+  /**
+   * Registra o resultado de uma partida na nota.
+   * `adversario` = { rating, desvio }: bot com nota fixa, ou humano desconhecido.
+   */
+  registrarResultado({ venceu, adversario, modo, nomeAdversario, contaParaNota = true }) {
+    const antes = this.rating;
+    // Vitoria esvaziada (adversario fraco demais, ou teto do solo) nao mexe na
+    // nota, mas ainda entra no historico — a partida aconteceu.
+    const depois = contaParaNota
+      ? atualizar(antes, [
+          { rating: adversario.rating, desvio: adversario.desvio, pontos: venceu ? 1 : 0 },
+        ])
+      : antes;
+
+    cache.rating = depois;
+    cache.historico = [
+      {
+        quando: Date.now(),
+        venceu,
+        modo,
+        adversario: nomeAdversario || null,
+        notaAntes: notaExibida(antes),
+        notaDepois: notaExibida(depois),
+      },
+      ...(cache.historico || []),
+    ].slice(0, HISTORICO_MAXIMO);
+
+    persist();
+    return { antes, depois };
+  },
+
+  /**
+   * Devolve incerteza a quem ficou um tempo sem jogar.
+   *
+   * Chamado ao abrir o jogo. Sem isso, quem sumiu por semanas volta com a nota
+   * antiga tratada como verdade e desequilibra as primeiras partidas de volta.
+   */
+  aplicarAfastamento() {
+    const ultima = (cache.historico || [])[0];
+    if (!ultima) return;
+    const semanas = Math.floor((Date.now() - ultima.quando) / (7 * 86400000));
+    if (semanas < 1) return;
+    cache.rating = afastamento(this.rating, semanas);
+    persist();
   },
 
   markTutorialSeen() {

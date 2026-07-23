@@ -1120,3 +1120,83 @@ input[type='checkbox'] {
   display: inline-block;
   vertical-align: -2px;
 }
+
+/* --------------------------------------------------------------- ranks */
+
+/* O jogador ve o RANK, nunca o MMR. Ver src/game/ranks.js. */
+
+.rank-card {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  margin-top: 14px;
+  padding: 13px 15px;
+  border-radius: var(--radius);
+  border: 1px solid var(--edge);
+  background: linear-gradient(180deg, var(--panel) 0%, var(--bg-deep) 100%);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: transform 0.12s ease, border-color 0.2s ease;
+}
+
+.rank-card:active { transform: scale(0.985); }
+
+.rank-selo {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.45));
+}
+
+.rank-texto { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.rank-texto strong { font-size: 1.06rem; letter-spacing: -0.01em; }
+.rank-texto small { color: var(--text-faint); font-size: 0.76rem; }
+
+.rank-barra {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--bg-deep);
+  overflow: hidden;
+  margin-top: 2px;
+}
+
+.rank-barra i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  border-radius: 3px;
+  transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Painel na tela de fim de partida */
+
+.rank-resultado {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  text-align: left;
+  background: var(--tile);
+  border: 1px solid var(--edge);
+  border-radius: 13px;
+  padding: 13px 15px;
+  margin: 16px 0 4px;
+  animation: screenIn 0.35s ease-out 0.15s backwards;
+}
+
+.rank-resultado-texto { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.rank-resultado-texto strong { font-size: 1.05rem; }
+.rank-resultado-texto small { color: var(--text-dim); font-size: 0.78rem; line-height: 1.35; }
+
+.rank-delta {
+  font-family: 'Consolas', ui-monospace, monospace;
+  font-weight: 800;
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+.rank-delta.sobe { color: var(--safe); }
+.rank-delta.desce { color: var(--danger); }

@@ -129,6 +129,21 @@ const editar = svg(`
         fill="${PALETA.rosa}"/>
 `);
 
+/** Ranking mundial: trofeu. */
+const trofeu = svg(`
+  <path d="M6.5 4h11v3.2a5.5 5.5 0 01-11 0V4z" fill="url(#gradTrofeu)"/>
+  <path d="M6.5 5.2H4v1.4a2.6 2.6 0 002.6 2.6M17.5 5.2H20v1.4a2.6 2.6 0 01-2.6 2.6"
+        stroke="${PALETA.ambar}" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+  <rect x="10.4" y="12.2" width="3.2" height="3.4" fill="${PALETA.ambar}"/>
+  <path d="M7.6 20.4h8.8v-1.4a1.6 1.6 0 00-1.6-1.6H9.2a1.6 1.6 0 00-1.6 1.6v1.4z" fill="url(#gradTrofeu)"/>
+  <defs>
+    <linearGradient id="gradTrofeu" x1="7" y1="4" x2="17" y2="20">
+      <stop offset="0" stop-color="#ffe27a"/>
+      <stop offset="1" stop-color="${PALETA.ambar}"/>
+    </linearGradient>
+  </defs>
+`);
+
 /** Sair da partida. */
 const sair = svg(`
   <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" stroke="currentColor"
@@ -137,6 +152,7 @@ const sair = svg(`
 
 export const ICONES = {
   solo,
+  trofeu,
   editar,
   amigos,
   estatisticas,

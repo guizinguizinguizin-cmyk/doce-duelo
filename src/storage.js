@@ -28,6 +28,7 @@ const DEFAULTS = {
     music: 0.35,
     sfx: 0.7,
     reducedMotion: null, // null = seguir a preferencia do sistema
+    modoLeve: null, // null = decidir pelo aparelho; true/false = escolha do jogador
     hints: true,
     debug: false,
   },

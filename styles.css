@@ -1624,3 +1624,40 @@ body.tela-batalha .bg-scene { opacity: 0.12; }
   background: linear-gradient(90deg, rgba(255, 77, 141, 0.14), transparent);
   border-color: rgba(255, 77, 141, 0.4);
 }
+
+/* ================================================================ modo leve */
+
+/* Para celulares fracos. Desliga o que mais pesa na GPU (desfoques grandes,
+   aurora animada, grao, vidro dos cards). O jogo continua 100% jogavel, so
+   com um visual mais simples. */
+
+body.modo-leve .bg-fx,
+body.modo-leve .bg-scene,
+body.modo-leve .bg-grain { display: none !important; }
+
+body.modo-leve .menu-btn,
+body.modo-leve .rank-card,
+body.modo-leve .name-chip,
+body.modo-leve .modal {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* No modo leve os cards ficam solidos (sem o vidro que custa caro). */
+body.modo-leve .menu-btn { background: linear-gradient(180deg, #241542, #180d30); }
+body.modo-leve .rank-card { background: linear-gradient(180deg, #241542, #180d30); }
+
+/* Anima o minimo. */
+body.modo-leve .combo-fx.mostra,
+body.modo-leve .combo-fx[data-nivel='medio'].mostra,
+body.modo-leve .combo-fx[data-nivel='alto'].mostra { animation: comboFxIn 0.55s ease forwards; }
+body.modo-leve.perigo-critico::before { animation: none; opacity: 0.5; }
+body.modo-leve.perigo-perigo::after,
+body.modo-leve.perigo-critico::after { animation: none; }
+body.modo-leve .brand-mark { animation: none; }
+
+/* Tile do ranking no menu (dourado). */
+#btnRanking .menu-btn-icon {
+  background: linear-gradient(145deg, rgba(255, 179, 64, 0.3), rgba(255, 179, 64, 0.06));
+  box-shadow: inset 0 0 0 1px rgba(255, 179, 64, 0.28);
+}

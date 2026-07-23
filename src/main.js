@@ -129,6 +129,7 @@ const el = {
   musicValue: $('musicValue'),
   sfxValue: $('sfxValue'),
   reducedMotionToggle: $('reducedMotionToggle'),
+  liteToggle: $('liteToggle'),
   hintsToggle: $('hintsToggle'),
 };
 
@@ -166,6 +167,34 @@ function prefersReducedMotion() {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
+/** Aparelho aparenta ser fraco? (so quando o navegador informa a memoria) */
+function aparelhoFraco() {
+  const mem = navigator.deviceMemory;
+  return typeof mem === 'number' ? mem <= 2 : false;
+}
+
+/**
+ * Modo leve: desliga os efeitos pesados (aurora, desfoques, vidro dos cards,
+ * particulas) para celulares que travam. Nada da jogabilidade muda.
+ * null = decide pelo aparelho; true/false = o jogador escolheu.
+ */
+function modoLeveAtivo() {
+  const v = storage.settings.modoLeve;
+  return v === null || v === undefined ? aparelhoFraco() : !!v;
+}
+
+function aplicarModoLeve() {
+  const leve = modoLeveAtivo();
+  document.body.classList.toggle('modo-leve', leve);
+  // O tabuleiro fica mais barato no modo leve (menos particulas, sem tremor).
+  renderer.setReducedMotion(leve || prefersReducedMotion());
+  if (leve) {
+    backdrop.stop();
+  } else if (screens.Battle.classList.contains('hidden')) {
+    backdrop.start();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Telas
 // ---------------------------------------------------------------------------
@@ -181,7 +210,7 @@ function showScreen(name) {
     renderer.start();
   } else {
     renderer.stop();
-    backdrop.start();
+    if (!modoLeveAtivo()) backdrop.start();
   }
 }
 
@@ -198,7 +227,7 @@ function applySettings() {
   audio.setMusicVolume(s.music);
   audio.setSfxVolume(s.sfx);
   audio.setMuted(s.muted);
-  renderer.setReducedMotion(prefersReducedMotion());
+  renderer.setReducedMotion(prefersReducedMotion() || modoLeveAtivo());
   backdrop.setReducedMotion(prefersReducedMotion());
 
   el.musicSlider.value = Math.round(s.music * 100);
@@ -206,7 +235,9 @@ function applySettings() {
   el.musicValue.textContent = Math.round(s.music * 100) + '%';
   el.sfxValue.textContent = Math.round(s.sfx * 100) + '%';
   el.reducedMotionToggle.checked = prefersReducedMotion();
+  el.liteToggle.checked = modoLeveAtivo();
   el.hintsToggle.checked = s.hints;
+  aplicarModoLeve();
   if (s.debug !== debugLigado) setDebug(!!s.debug);
   el.btnHint.classList.toggle('hidden', !s.hints);
 
@@ -1595,6 +1626,11 @@ $('btnLeaderboard').addEventListener('click', () => {
   abrirPlacar();
 });
 
+$('btnRanking').addEventListener('click', () => {
+  audio.play('tap');
+  abrirPlacar();
+});
+
 el.soundBtn.addEventListener('click', () => {
   const muted = !storage.settings.muted;
   storage.updateSettings({ muted });
@@ -1624,7 +1660,13 @@ el.sfxSlider.addEventListener('change', () => audio.play('match', 2, 3));
 
 el.reducedMotionToggle.addEventListener('change', () => {
   storage.updateSettings({ reducedMotion: el.reducedMotionToggle.checked });
-  renderer.setReducedMotion(el.reducedMotionToggle.checked);
+  renderer.setReducedMotion(el.reducedMotionToggle.checked || modoLeveAtivo());
+  backdrop.setReducedMotion(el.reducedMotionToggle.checked);
+});
+
+el.liteToggle.addEventListener('change', () => {
+  storage.updateSettings({ modoLeve: el.liteToggle.checked });
+  aplicarModoLeve();
 });
 
 if (el.debugToggle) {

@@ -78,7 +78,9 @@ export function createRenderer(canvas, options = {}) {
   function resize() {
     const rect = canvas.getBoundingClientRect();
     const width = rect.width || canvas.clientWidth || 320;
-    dpr = Math.min(window.devicePixelRatio || 1, 3);
+    // Em modo reduzido/leve, capa a resolucao: metade dos pixels no celular
+    // fraco (dpr 3 -> 1.5) e um baita ganho de fps, com perda visual minima.
+    dpr = Math.min(window.devicePixelRatio || 1, reducedMotion ? 1.5 : 3);
     cssWidth = width;
 
     cellSize = Math.max(18, (width - BOARD_PAD * 2 - CELL_GAP * (COLS - 1)) / COLS);

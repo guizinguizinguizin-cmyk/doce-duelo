@@ -1,0 +1,12 @@
+{
+  "name": "doce-duelo",
+  "version": "2.0.0",
+  "description": "Match-3 PvP em tempo real, ate 4 jogadores - por HollowVoid Guilherme",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test",
+    "dev": "node scripts/serve.js",
+    "icons": "node generate-icons.js"
+  }
+}

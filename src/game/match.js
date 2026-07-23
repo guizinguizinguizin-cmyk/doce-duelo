@@ -103,13 +103,13 @@ export function createMatch({ seed, players, startedAt = 0 }) {
     return empatados[rng.int(empatados.length)];
   }
 
-  function entregarAtaque(deId, unidades, t) {
+  function entregarAtaque(deId, unidades, t, especial = false) {
     if (unidades <= 0 || finished) return null;
     const alvo = escolherAlvo(deId);
     if (!alvo) return null;
 
-    alvo.pressure.queueAttack(unidades, deId, t);
-    return registrar({ t, tipo: 'ataque', de: deId, para: alvo.id, unidades });
+    alvo.pressure.queueAttack(unidades, deId, t, especial);
+    return registrar({ t, tipo: 'ataque', de: deId, para: alvo.id, unidades, especial });
   }
 
   /**
@@ -142,7 +142,7 @@ export function createMatch({ seed, players, startedAt = 0 }) {
     let alvoId = null;
     if (sobra > 0) {
       const escalado = escalateUnits(sobra, t - startedAt);
-      const evento = entregarAtaque(jogadorId, escalado, t);
+      const evento = entregarAtaque(jogadorId, escalado, t, !!resultado.comboKind);
       if (evento) {
         enviado = evento.unidades;
         alvoId = evento.para;
@@ -175,7 +175,7 @@ export function createMatch({ seed, players, startedAt = 0 }) {
       const p = estado.get(id);
       if (!p.alive) continue;
 
-      const entrou = p.pressure.tick(t);
+      const { total: entrou } = p.pressure.tick(t);
       if (entrou > 0) {
         p.unitsTaken += entrou;
         if (p.pressure.current > p.peakPressure) p.peakPressure = p.pressure.current;

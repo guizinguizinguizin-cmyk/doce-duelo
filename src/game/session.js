@@ -25,7 +25,7 @@ import {
   STREAK_TIMEOUT_MS,
   streakMultiplier,
   escalateUnits,
-  garbageForPressure,
+  garbageForAttack,
   PRESSURE_RELIEF_PER_GARBAGE,
 } from './balance.js';
 
@@ -51,8 +51,6 @@ export function createSession(hooks = {}) {
   let tickTimer = null;
   let matchSeed = 0;
   let recorder = null;
-  // Sobra de pressao que ainda nao completou um obstaculo.
-  let restoDeLixo = 0;
   // Gerador dedicado as DECISOES do duelo (desempate de alvo). Semeado a partir
   // da semente da partida, para o replay reproduzir as mesmas escolhas.
   let duelRng = createRng(0);
@@ -223,7 +221,7 @@ export function createSession(hooks = {}) {
   // ---------------------------------------------------------------------------
 
   /** Escolhe um alvo vivo e envia unidades. So o anfitriao chama isso. */
-  function routeAttack(fromId, rawUnits) {
+  function routeAttack(fromId, rawUnits, especial = false) {
     if (!active || !isHost || rawUnits <= 0) return;
     const candidates = roster.filter((p) => p.alive && p.id !== fromId);
     if (!candidates.length) return;
@@ -245,15 +243,15 @@ export function createSession(hooks = {}) {
     const target = empatados[duelRng.int(empatados.length)];
 
     emit('onAttackSent', fromId, target.id, units);
-    deliverAttack(target.id, units, fromId);
+    deliverAttack(target.id, units, fromId, especial);
   }
 
-  function deliverAttack(targetId, units, fromId) {
+  function deliverAttack(targetId, units, fromId, especial = false) {
     const target = findPlayer(targetId);
     if (!target || !target.alive) return;
 
     if (targetId === localId) {
-      pressure.queueAttack(units, fromId);
+      pressure.queueAttack(units, fromId, Date.now(), especial);
       syncLocalIntoRoster();
       emit('onPendingChange', pressure.pending, pressure.current, pressure.alert);
       emit('onIncoming', units, fromId);
@@ -263,11 +261,11 @@ export function createSession(hooks = {}) {
 
     const bot = bots.get(targetId);
     if (bot) {
-      bot.receiveAttack(units, fromId);
+      bot.receiveAttack(units, fromId, especial);
       return;
     }
 
-    if (net) net.sendTo(targetId, { tipo: 'ataque', unidades: units, de: fromId });
+    if (net) net.sendTo(targetId, { tipo: 'ataque', unidades: units, de: fromId, especial });
   }
 
   /** O jogador caiu por pressao propria, ou por algo externo ao jogo? */
@@ -371,10 +369,13 @@ export function createSession(hooks = {}) {
       alert: pressure.alert,
     });
 
+    // Combo de especiais marca o ataque: e o que faz o adversario receber
+    // cadeado em vez de pedra, e conseguir entender por que.
+    const especial = !!result.comboKind;
     if (sobra > 0) {
       stats.unitsSent += sobra;
-      if (isHost) routeAttack(localId, sobra);
-      else net.sendToHost({ tipo: 'pedidoAtaque', unidades: sobra });
+      if (isHost) routeAttack(localId, sobra, especial);
+      else net.sendToHost({ tipo: 'pedidoAtaque', unidades: sobra, especial });
     }
 
     return { points, units, cancelled: cancelado, sent: sobra };
@@ -412,18 +413,20 @@ export function createSession(hooks = {}) {
     if (!active) return;
     const now = Date.now();
 
-    const entrou = pressure.tick(now);
+    const { total: entrou, caidos } = pressure.tick(now);
     if (entrou > 0) {
       stats.unitsTaken += entrou;
       if (pressure.current > stats.peakPressure) stats.peakPressure = pressure.current;
       syncLocalIntoRoster();
       emit('onPressureLanded', entrou, pressure.current, pressure.alert);
 
-      // A pressao que entrou tambem suja o tabuleiro. Quem desenha decide
-      // quando aplicar (nao pode ser no meio de uma cascata).
-      const { quantidade, resto } = garbageForPressure(entrou, restoDeLixo);
-      restoDeLixo = resto;
-      if (quantidade > 0) emit('onGarbage', quantidade);
+      // Cada ataque caido produz o SEU lixo, pelo proprio tamanho. Somar antes
+      // apagaria a relacao entre o golpe e o obstaculo que ele deixou — e e
+      // essa relacao que faz o lixo nao parecer sorte.
+      for (const ataque of caidos) {
+        const lixo = garbageForAttack(ataque);
+        if (lixo.quantidade > 0) emit('onGarbage', lixo);
+      }
 
       broadcastLocalState();
 
@@ -519,12 +522,12 @@ export function createSession(hooks = {}) {
       }
 
       case 'pedidoAtaque':
-        if (isHost) routeAttack(fromId, msg.unidades);
+        if (isHost) routeAttack(fromId, msg.unidades, !!msg.especial);
         break;
 
       case 'ataque':
         if (active) {
-          pressure.queueAttack(msg.unidades, msg.de);
+          pressure.queueAttack(msg.unidades, msg.de, Date.now(), !!msg.especial);
           syncLocalIntoRoster();
           emit('onPendingChange', pressure.pending, pressure.current, pressure.alert);
           emit('onIncoming', msg.unidades, msg.de);
@@ -580,7 +583,6 @@ export function createSession(hooks = {}) {
     comboStreak = 0;
     lastScoringMove = 0;
     matchStartedAt = Date.now();
-    restoDeLixo = 0;
     Object.assign(stats, {
       bestCombo: 0,
       bestCascade: 0,

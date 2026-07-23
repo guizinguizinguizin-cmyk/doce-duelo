@@ -124,7 +124,7 @@ let drag = null;
 let idleTimer = null;
 // Lixo que chegou enquanto uma cascata rodava. Aplicar no meio da animacao
 // dessincronizaria o espelho visual do renderer com o tabuleiro.
-let lixoPendente = 0;
+let lixoPendente = [];
 
 let soloConfig = { difficulty: 'normal', opponents: 1 };
 let onlineConfig = { maxPlayers: 2 };
@@ -431,19 +431,36 @@ async function playPhases(phases) {
  * So roda com o tabuleiro parado: mexer no grid durante uma cascata deixaria
  * o espelho visual do renderer descrevendo um tabuleiro que nao existe mais.
  */
-function aplicarLixo() {
-  if (lixoPendente <= 0 || !session || !session.active) return;
-  const quantidade = lixoPendente;
-  lixoPendente = 0;
+const COMO_QUEBRAR = {
+  pedra: 'Combine AO LADO das pedras para quebrá-las',
+  gelo: 'O gelo aguenta dois toques — combine ao lado dele',
+  cadeado: 'A peça trancada ainda combina; use a cor dela',
+};
 
-  const colocados = injectGarbage(grid, quantidade, BLOCKER.PEDRA, rng);
-  if (!colocados.length) return;
+function aplicarLixo() {
+  if (!lixoPendente.length || !session || !session.active) return;
+  const levas = lixoPendente;
+  lixoPendente = [];
+
+  let total = 0;
+  let ultima = null;
+  for (const lixo of levas) {
+    const colocados = injectGarbage(grid, lixo.quantidade, lixo.tipo, rng);
+    if (!colocados.length) continue;
+    total += colocados.length;
+    ultima = lixo;
+  }
+  if (!total) return;
 
   renderer.setGrid(grid);
-  renderer.shake(6 + colocados.length * 1.5);
-  audio.play('wrapped');
-  announce(`${colocados.length} obstáculo(s) caíram no seu tabuleiro`);
-  el.battleHint.textContent = 'Combine ao lado das pedras para quebrá-las';
+  renderer.shake(6 + total * 1.5);
+  audio.play(ultima.tipo === 'cadeado' ? 'createSpecial' : 'wrapped');
+
+  // O MOTIVO na tela e o ponto do sistema de niveis: o jogador tem de ligar o
+  // obstaculo ao golpe que o causou. Sem essa frase, o lixo continuaria
+  // parecendo sorte, mesmo sendo determinado pelo tamanho do ataque.
+  el.battleHint.textContent = `${ultima.explicacao}. ${COMO_QUEBRAR[ultima.tipo] || ''}`;
+  announce(`${ultima.explicacao}: ${total} obstáculo(s) no seu tabuleiro`);
   session.broadcastLocalState();
 }
 
@@ -620,8 +637,8 @@ function createSessionWithHooks() {
       announce(`Chegando: ${units} de pressão. Faça um combo para cancelar!`);
     },
 
-    onGarbage: (quantidade) => {
-      lixoPendente += quantidade;
+    onGarbage: (lixo) => {
+      lixoPendente.push(lixo);
       if (!busy) aplicarLixo();
     },
 
@@ -707,7 +724,7 @@ function beginBattle(semente) {
 
   busy = false;
   selected = null;
-  lixoPendente = 0;
+  lixoPendente = [];
 
   el.myNameLabel.textContent = storage.name || 'Você';
   updateScoreUI(false);

@@ -31,7 +31,7 @@ import {
   STREAK_TIMEOUT_MS,
   streakMultiplier,
   escalateUnits,
-  garbageForPressure,
+  garbageForAttack,
   PRESSURE_RELIEF_PER_GARBAGE,
 } from '../src/game/balance.js';
 import { DIFFICULTIES } from '../src/game/bot.js';
@@ -61,8 +61,8 @@ function criarAgente({ nome, thinkMs, skill, isBot, mistakeChance = 0 }, seed, m
     enviado: 0,
     cancelado: 0,
     recebido: 0,
-    restoDeLixo: 0,
     lixoRecebido: 0,
+    lixoPorTipo: { pedra: 0, gelo: 0, cadeado: 0 },
   };
 }
 
@@ -100,15 +100,16 @@ function simularPartida(configA, configB, seed) {
 
     // Converte pendentes vencidos em pressao real, nos dois lados.
     for (const agente of agentes) {
-      const entrou = agente.pressure.tick(t);
+      const { total: entrou, caidos } = agente.pressure.tick(t);
       if (entrou > 0) {
         agente.recebido += entrou;
-        // A pressao que entra tambem suja o tabuleiro, igual ao jogo.
-        const lixo = garbageForPressure(entrou, agente.restoDeLixo);
-        agente.restoDeLixo = lixo.resto;
-        if (lixo.quantidade > 0) {
-          injectGarbage(agente.grid, lixo.quantidade, BLOCKER.PEDRA, agente.boardRng);
+        // Cada ataque caido gera o SEU lixo, pelo proprio tamanho e natureza.
+        for (const ataque of caidos) {
+          const lixo = garbageForAttack(ataque);
+          if (lixo.quantidade <= 0) continue;
+          injectGarbage(agente.grid, lixo.quantidade, lixo.tipo, agente.boardRng);
           agente.lixoRecebido += lixo.quantidade;
+          agente.lixoPorTipo[lixo.tipo] += lixo.quantidade;
         }
         if (agente.pressure.dead) agente.vivo = false;
       }
@@ -141,7 +142,7 @@ function simularPartida(configA, configB, seed) {
         if (sobra > 0) {
           const enviado = escalateUnits(sobra, t);
           atual.enviado += enviado;
-          alvo.pressure.queueAttack(enviado, atual.nome, t);
+          alvo.pressure.queueAttack(enviado, atual.nome, t, !!resultado.comboKind);
         }
       }
     }
@@ -165,6 +166,7 @@ function rodar(rotulo, configA, configB, partidas = 300) {
   const enviados = [];
   const cancelados = [];
   const lixos = [];
+  const porTipo = { pedra: 0, gelo: 0, cadeado: 0 };
   let vitoriasA = 0;
   let empates = 0;
 
@@ -174,6 +176,7 @@ function rodar(rotulo, configA, configB, partidas = 300) {
     enviados.push(a.enviado);
     cancelados.push(a.cancelado);
     lixos.push(a.lixoRecebido);
+    for (const k of Object.keys(porTipo)) porTipo[k] += a.lixoPorTipo[k];
     if (vencedor === 'a') vitoriasA += 1;
     if (vencedor === 'empate') empates += 1;
   }
@@ -194,7 +197,8 @@ function rodar(rotulo, configA, configB, partidas = 300) {
       `p90 ${seg(percentil(duracoes, 0.9)).padStart(5)}  ` +
       `enviou ${enviadoMedio.toFixed(0).padStart(3)}u  ` +
       `cancelou ${taxaCancel.toFixed(0).padStart(2)}%  ` +
-      `lixo ${media(lixos).toFixed(0).padStart(2)}` +
+      `lixo ${media(lixos).toFixed(0).padStart(2)}  ` +
+      `(pedra ${(porTipo.pedra / partidas).toFixed(1)} gelo ${(porTipo.gelo / partidas).toFixed(1)} cad ${(porTipo.cadeado / partidas).toFixed(1)})` +
       (empates ? `  ARRASTADAS ${empates}` : '')
   );
 }

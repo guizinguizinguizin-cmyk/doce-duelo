@@ -47,10 +47,15 @@ test('pendente so vira pressao depois da janela', () => {
   const p = createPressure();
   p.queueAttack(4, 'inimigo', 1000);
 
-  assert.equal(p.tick(1000 + PENDING_DELAY_MS - 1), 0, 'cedo demais');
+  assert.equal(p.tick(1000 + PENDING_DELAY_MS - 1).total, 0, 'cedo demais');
   assert.equal(p.current, 0);
 
-  assert.equal(p.tick(1000 + PENDING_DELAY_MS), 4, 'agora sim');
+  const caiu = p.tick(1000 + PENDING_DELAY_MS);
+  assert.equal(caiu.total, 4, 'agora sim');
+  // O ataque cai INTEIRO, com o proprio tamanho: e disso que o tipo de
+  // obstaculo e derivado.
+  assert.equal(caiu.caidos.length, 1);
+  assert.equal(caiu.caidos[0].units, 4);
   assert.equal(p.current, 4);
   assert.equal(p.pending, 0);
 });

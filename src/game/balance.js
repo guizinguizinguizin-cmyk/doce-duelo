@@ -123,15 +123,69 @@ export function escalateUnits(units, elapsedMs) {
 // ---------------------------------------------------------------------------
 
 /**
- * Quantas unidades de pressao que ENTRARAM valem um obstaculo.
+ * O TIPO de obstaculo depende do ataque que o causou, nunca de sorteio.
  *
- * Numero alto de proposito. O obstaculo e uma segunda punicao pelo mesmo
- * ataque, e empilhar lixo em quem ja esta perdendo trabalha contra o pilar de
- * "sempre existe chance de virar": quanto pior a sua situacao, menos jogadas
- * voce tem para reagir. A taxa baixa mantem o lixo como uma presenca que
- * incomoda, nao como uma bola de neve.
+ * E a diferenca entre "caiu gelo, que azar" e "levei um golpe pesado, por isso
+ * veio gelo". O jogador consegue ler o proprio tabuleiro e reconstruir o que
+ * aconteceu, e quem assiste tambem — os dois estao entre os pilares do jogo.
+ *
+ * Tabela ordenada: vale o primeiro nivel que casa. Como sao dados e nao uma
+ * cadeia de ifs, mudar o balanceamento aqui nao mexe em logica nenhuma.
  */
-export const GARBAGE_PER_PRESSURE = 4;
+export const GARBAGE_TIERS = [
+  {
+    nome: 'especial',
+    // Combinacao de especiais (bomba com bomba, listrada com embrulhada...).
+    // A jogada mais dificil do jogo merece o obstaculo mais incomodo.
+    minUnits: 3,
+    exigeEspecial: true,
+    tipo: 'cadeado',
+    quantidade: (u) => (u >= 10 ? 2 : 1),
+    explicacao: 'Combo especial: cadeados',
+  },
+  {
+    nome: 'grande',
+    minUnits: 6,
+    tipo: 'gelo',
+    quantidade: (u) => (u >= 10 ? 2 : 1),
+    explicacao: 'Ataque forte: gelo',
+  },
+  {
+    nome: 'medio',
+    minUnits: 3,
+    tipo: 'pedra',
+    quantidade: () => 1,
+    explicacao: 'Ataque médio: pedra',
+  },
+  {
+    nome: 'pequeno',
+    minUnits: 0,
+    tipo: null,
+    quantidade: () => 0,
+    explicacao: null,
+  },
+];
+
+/**
+ * Que lixo um ataque que acabou de cair produz.
+ * `ataque` e um item da fila de pressao: { units, especial }.
+ */
+export function garbageForAttack(ataque) {
+  const unidades = ataque.units || 0;
+  const especial = !!ataque.especial;
+
+  for (const nivel of GARBAGE_TIERS) {
+    if (unidades < nivel.minUnits) continue;
+    if (nivel.exigeEspecial && !especial) continue;
+    return {
+      nivel: nivel.nome,
+      tipo: nivel.tipo,
+      quantidade: nivel.tipo ? nivel.quantidade(unidades) : 0,
+      explicacao: nivel.explicacao,
+    };
+  }
+  return { nivel: 'pequeno', tipo: null, quantidade: 0, explicacao: null };
+}
 
 /**
  * Cada obstaculo destruido devolve esta pressao.
@@ -141,12 +195,3 @@ export const GARBAGE_PER_PRESSURE = 4;
  * puro sem resposta, e o jogador nao teria caminho de volta.
  */
 export const PRESSURE_RELIEF_PER_GARBAGE = 1;
-
-/** Quantos obstaculos nascem de uma leva de pressao que acabou de entrar. */
-export function garbageForPressure(unidadesQueEntraram, acumuladoAnterior = 0) {
-  const total = acumuladoAnterior + unidadesQueEntraram;
-  return {
-    quantidade: Math.floor(total / GARBAGE_PER_PRESSURE),
-    resto: total % GARBAGE_PER_PRESSURE,
-  };
-}

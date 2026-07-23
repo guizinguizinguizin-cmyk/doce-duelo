@@ -24,7 +24,7 @@ import { createRng, createMatchRandom } from '../core/rng.js';
 import {
   STREAK_TIMEOUT_MS,
   streakMultiplier,
-  garbageForPressure,
+  garbageForAttack,
   PRESSURE_RELIEF_PER_GARBAGE,
 } from './balance.js';
 import { createPressure } from './pressure.js';
@@ -100,7 +100,6 @@ export function createBot({ id, name, difficulty = 'normal', brainSeed, hooks = 
   let timer = null;
   let comboStreak = 0;
   let lastMoveAt = 0;
-  let restoDeLixo = 0;
 
   /**
    * Avalia uma jogada simulando-a numa copia. Devolve os pontos que ela renderia.
@@ -186,7 +185,7 @@ export function createBot({ id, name, difficulty = 'normal', brainSeed, hooks = 
         const { sobra } = pressure.spend(units);
 
         emitState();
-        if (sobra > 0 && hooks.onAttack) hooks.onAttack(id, sobra);
+        if (sobra > 0 && hooks.onAttack) hooks.onAttack(id, sobra, !!result.comboKind);
       }
     }
 
@@ -218,9 +217,9 @@ export function createBot({ id, name, difficulty = 'normal', brainSeed, hooks = 
     },
 
     /** Ataque recebido: entra na fila de pendentes, igual ao do jogador. */
-    receiveAttack(units, from) {
+    receiveAttack(units, from, especial = false) {
       if (!alive) return;
-      pressure.queueAttack(units, from);
+      pressure.queueAttack(units, from, Date.now(), especial);
       emitState();
     },
 
@@ -231,13 +230,15 @@ export function createBot({ id, name, difficulty = 'normal', brainSeed, hooks = 
      */
     tick(now) {
       if (!alive) return;
-      const entrou = pressure.tick(now);
+      const { total: entrou, caidos } = pressure.tick(now);
       if (entrou > 0) {
-        // O bot suja o proprio tabuleiro pela mesma regra do jogador. Se ele
-        // jogasse limpo enquanto o outro enche de pedra, o modo solo mentiria.
-        const { quantidade, resto } = garbageForPressure(entrou, restoDeLixo);
-        restoDeLixo = resto;
-        if (quantidade > 0) injectGarbage(grid, quantidade, BLOCKER.PEDRA, boardRng);
+        // O bot suja o proprio tabuleiro pela mesma regra do jogador, e pelos
+        // mesmos niveis. Se ele jogasse limpo enquanto o outro enche de pedra,
+        // o modo solo mentiria.
+        for (const ataque of caidos) {
+          const lixo = garbageForAttack(ataque);
+          if (lixo.quantidade > 0) injectGarbage(grid, lixo.quantidade, lixo.tipo, boardRng);
+        }
 
         emitState();
         if (pressure.dead) {
@@ -257,7 +258,6 @@ export function createBot({ id, name, difficulty = 'normal', brainSeed, hooks = 
       score = 0;
       alive = true;
       comboStreak = 0;
-      restoDeLixo = 0;
       emitState();
     },
 

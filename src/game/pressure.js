@@ -51,10 +51,17 @@ export function createPressure() {
       return Math.min(1, pendingTotal() / PRESSURE_MAX);
     },
 
-    /** Enfileira um ataque recebido. Ele so vira pressao depois da janela. */
-    queueAttack(units, from, now = Date.now()) {
+    /**
+     * Enfileira um ataque recebido. Ele so vira pressao depois da janela.
+     *
+     * `especial` marca ataque vindo de combinacao de especiais. O tamanho e a
+     * natureza do golpe viajam junto com ele ate cair, porque e disso que sai
+     * o TIPO de obstaculo — sem carregar essa informacao, o lixo que aparece
+     * no tabuleiro nao teria como ser explicado pelo ataque que o causou.
+     */
+    queueAttack(units, from, now = Date.now(), especial = false) {
       if (units <= 0) return;
-      queue.push({ units, from, landsAt: now + PENDING_DELAY_MS });
+      queue.push({ units, from, especial, landsAt: now + PENDING_DELAY_MS });
     },
 
     /**
@@ -84,19 +91,26 @@ export function createPressure() {
 
     /**
      * Converte em pressao real tudo que venceu a janela.
-     * Devolve quantas unidades entraram, para a UI reagir ao impacto.
+     *
+     * Devolve `{ total, caidos }`. Os ataques caidos vem inteiros, cada um com
+     * o proprio tamanho, e nao somados: o tipo de obstaculo depende do tamanho
+     * de CADA golpe, entao somar antes destruiria justamente a informacao que
+     * torna o lixo legivel.
      */
     tick(now = Date.now()) {
-      if (!queue.length) return 0;
-      let entrou = 0;
+      if (!queue.length) return { total: 0, caidos: [] };
+
+      const caidos = [];
       const restantes = [];
       for (const item of queue) {
-        if (item.landsAt <= now) entrou += item.units;
+        if (item.landsAt <= now) caidos.push(item);
         else restantes.push(item);
       }
       queue = restantes;
-      if (entrou > 0) current = Math.min(PRESSURE_MAX, current + entrou);
-      return entrou;
+
+      const total = caidos.reduce((soma, item) => soma + item.units, 0);
+      if (total > 0) current = Math.min(PRESSURE_MAX, current + total);
+      return { total, caidos };
     },
 
     /** Alivio direto de pressao ja efetivada (nao usado pelo ataque normal). */

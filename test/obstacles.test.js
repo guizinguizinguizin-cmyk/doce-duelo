@@ -33,6 +33,7 @@ import {
   idx,
   rowOf,
 } from '../src/core/board.js';
+import { garbageForAttack, GARBAGE_TIERS } from '../src/game/balance.js';
 
 let proximoId = 5000;
 
@@ -439,5 +440,77 @@ test('jogar com o tabuleiro sujo nunca quebra os invariantes', () => {
       // Injeta mais lixo no meio da partida, como um ataque faria.
       if (jogada % 7 === 6) injectGarbage(grid, 2, BLOCKER.PEDRA, rng);
     }
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Distribuicao: o TIPO de obstaculo depende do ataque que o causou
+// ---------------------------------------------------------------------------
+
+test('ataque pequeno nao suja o tabuleiro', () => {
+  for (const unidades of [1, 2]) {
+    const lixo = garbageForAttack({ units: unidades, especial: false });
+    assert.equal(lixo.quantidade, 0, `${unidades}u nao deveria gerar obstaculo`);
+    assert.equal(lixo.tipo, null);
+    assert.equal(lixo.nivel, 'pequeno');
+  }
+});
+
+test('ataque medio deixa pedra', () => {
+  for (const unidades of [3, 4, 5]) {
+    const lixo = garbageForAttack({ units: unidades, especial: false });
+    assert.equal(lixo.tipo, BLOCKER.PEDRA, `${unidades}u deveria virar pedra`);
+    assert.equal(lixo.quantidade, 1);
+  }
+});
+
+test('ataque grande deixa gelo', () => {
+  for (const unidades of [6, 7, 9]) {
+    const lixo = garbageForAttack({ units: unidades, especial: false });
+    assert.equal(lixo.tipo, BLOCKER.GELO, `${unidades}u deveria virar gelo`);
+  }
+  // Golpe muito grande deixa mais de um.
+  assert.equal(garbageForAttack({ units: 12, especial: false }).quantidade, 2);
+});
+
+test('combo de especiais deixa cadeado, seja qual for o tamanho', () => {
+  for (const unidades of [3, 6, 12]) {
+    const lixo = garbageForAttack({ units: unidades, especial: true });
+    assert.equal(lixo.tipo, BLOCKER.CADEADO, `${unidades}u com especial deveria virar cadeado`);
+    assert.equal(lixo.nivel, 'especial');
+  }
+});
+
+test('a severidade do lixo nunca diminui quando o ataque cresce', () => {
+  // Propriedade que sustenta a leitura do jogador: golpe maior nunca pode
+  // resultar em obstaculo mais brando, senao a relacao deixa de ser previsivel.
+  const severidade = { [BLOCKER.PEDRA]: 1, [BLOCKER.GELO]: 2, [BLOCKER.CADEADO]: 2 };
+  let anterior = 0;
+  for (let u = 0; u <= 20; u++) {
+    const lixo = garbageForAttack({ units: u, especial: false });
+    const atual = lixo.tipo ? severidade[lixo.tipo] : 0;
+    assert.ok(atual >= anterior, `severidade caiu de ${anterior} para ${atual} em ${u}u`);
+    anterior = atual;
+  }
+});
+
+test('todo nivel com obstaculo sabe explicar o motivo ao jogador', () => {
+  // A frase e o que impede o lixo de parecer sorte. Nivel sem explicacao
+  // deixaria o jogador sem como ligar o obstaculo ao golpe.
+  for (const nivel of GARBAGE_TIERS) {
+    if (!nivel.tipo) continue;
+    assert.ok(
+      typeof nivel.explicacao === 'string' && nivel.explicacao.length > 3,
+      `o nivel "${nivel.nome}" nao explica de onde veio`
+    );
+  }
+});
+
+test('todo tipo da tabela existe de verdade no tabuleiro', () => {
+  const conhecidos = Object.values(BLOCKER);
+  for (const nivel of GARBAGE_TIERS) {
+    if (!nivel.tipo) continue;
+    assert.ok(conhecidos.includes(nivel.tipo), `tipo desconhecido na tabela: ${nivel.tipo}`);
+    assert.ok(BLOCKER_HP[nivel.tipo] >= 1, `${nivel.tipo} sem vida definida`);
   }
 });

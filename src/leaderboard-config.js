@@ -22,6 +22,9 @@ export function configLeaderboard() {
     const salvo = localStorage.getItem('doceduelo:supabase');
     if (salvo) {
       const c = JSON.parse(salvo);
+      // Desligamento explicito: { off: true }. Usado nos testes automatizados
+      // para que jogar uma partida de robo NUNCA envie nota ao placar real.
+      if (c && c.off) return { url: '', anonKey: '' };
       if (c && c.url && c.anonKey) return c;
     }
   } catch {

@@ -65,6 +65,17 @@ try {
     viewport: { width: 420, height: 900 },
     deviceScaleFactor: 2,
   });
+  // Desliga o placar mundial: este teste joga partidas ate o fim, e sem isto
+  // cada rodada enviaria uma nota-fantasma ao Supabase real (foi assim que
+  // varios "HollowVoid" de teste vazaram para o placar).
+  await contexto.addInitScript(() => {
+    try {
+      localStorage.setItem('doceduelo:supabase', JSON.stringify({ off: true }));
+    } catch {
+      /* sem localStorage: o placar ja fica inativo */
+    }
+  });
+
   const pagina = await contexto.newPage();
 
   const errosConsole = [];

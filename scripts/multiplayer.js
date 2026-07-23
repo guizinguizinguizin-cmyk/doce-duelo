@@ -72,6 +72,8 @@ async function abrirJogador(navegador, nome) {
       'doceduelo:v2',
       JSON.stringify({ name: n, tutorialSeen: true, settings: { muted: true } })
     );
+    // Placar desligado: teste nao envia nota-fantasma ao Supabase real.
+    localStorage.setItem('doceduelo:supabase', JSON.stringify({ off: true }));
   }, nome);
 
   await pagina.goto(BASE, { waitUntil: 'networkidle' });

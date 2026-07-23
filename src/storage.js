@@ -32,6 +32,8 @@ const DEFAULTS = {
     debug: false,
   },
   tutorialSeen: false,
+  /** Ja aprendeu o cancelamento na pratica? Para de mostrar a dica. */
+  cancelamentoVisto: false,
   /** Nota competitiva (Glicko-2). Ver src/game/rating.js. */
   rating: null,
   /** Ultimas partidas, para o historico e para medir afastamento. */
@@ -74,6 +76,12 @@ function persist() {
 export const storage = {
   get data() {
     return cache;
+  },
+
+  /** Grava chaves de topo do perfil (flags simples). */
+  updateData(patch) {
+    Object.assign(cache, patch);
+    persist();
   },
 
   get name() {

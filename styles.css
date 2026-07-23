@@ -1361,3 +1361,98 @@ input[type='checkbox'] {
   z-index: -2;
   pointer-events: none;
 }
+
+/* ============================================================ suco de combate */
+
+/* Dica do cancelamento: aparece no momento exato em que chega pressao, nas
+   primeiras partidas. Ensino contextual, uma frase, some sozinha. */
+.coach-tip {
+  position: fixed;
+  left: 50%;
+  top: 24%;
+  transform: translate(-50%, -14px);
+  z-index: 45;
+  max-width: 86vw;
+  padding: 12px 18px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--cyan), #2b7fd4);
+  color: #04121e;
+  font-weight: 800;
+  font-size: 0.95rem;
+  text-align: center;
+  box-shadow: 0 8px 26px rgba(69, 217, 255, 0.45);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.coach-tip.mostra {
+  animation: coachIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards, coachPulse 1s ease-in-out 0.4s infinite;
+}
+.coach-tip.saindo { animation: coachOut 0.4s ease forwards; }
+
+@keyframes coachIn { to { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes coachOut { to { opacity: 0; transform: translate(-50%, -14px); } }
+@keyframes coachPulse {
+  0%, 100% { box-shadow: 0 8px 26px rgba(69, 217, 255, 0.45); }
+  50% { box-shadow: 0 8px 34px rgba(69, 217, 255, 0.8); }
+}
+
+/* Projetil de ataque: o numero do dano voa do tabuleiro ate a miniatura do
+   adversario. A sensacao de "acertei ele". */
+.atk-proj {
+  position: fixed;
+  z-index: 46;
+  transform: translate(-50%, -50%) scale(1.15);
+  margin: -0.6em 0 0 -0.6em;
+  font-weight: 900;
+  font-size: 1.5rem;
+  color: #fff;
+  text-shadow: 0 0 12px rgba(255, 90, 90, 0.9), 0 2px 4px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+/* O disparo em si: comprime e voa ate o alvo. */
+.atk-proj.lancado {
+  transition: transform 0.42s cubic-bezier(0.5, 0, 0.75, 0), opacity 0.42s ease-in;
+}
+
+/* Flash na barra quando o jogador CANCELA um ataque. */
+.bar-track-h.bloqueou {
+  animation: barBloqueou 0.5s ease-out;
+}
+
+@keyframes barBloqueou {
+  0% { box-shadow: inset 0 0 0 2px var(--cyan), 0 0 22px rgba(69, 217, 255, 0.8); }
+  100% { box-shadow: none; }
+}
+
+/* --- Perigo mais intenso (estava raso demais) --- */
+
+/* Batida do coracao na tela inteira quando a pressao esta critica. */
+body.perigo-critico::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 41;
+  background: radial-gradient(ellipse at 50% 60%, transparent 45%, rgba(255, 20, 20, 0.28) 100%);
+  animation: batida 0.68s ease-in-out infinite;
+}
+
+@keyframes batida {
+  0%, 100% { opacity: 0.35; }
+  15% { opacity: 1; }
+  30% { opacity: 0.5; }
+  45% { opacity: 0.9; }
+}
+
+/* A barra critica lateja mais forte e "respira". */
+.bar-fill-h.critico {
+  animation: barPulse 0.45s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coach-tip.mostra { animation: coachIn 0.4s ease forwards; }
+  body.perigo-critico::before { animation: none; opacity: 0.5; }
+}

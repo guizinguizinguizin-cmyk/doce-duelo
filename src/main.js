@@ -156,6 +156,8 @@ let lastMode = 'solo';
 
 const opponentCards = new Map();
 
+const vibrar = (p) => { if (navigator.vibrate) navigator.vibrate(p); };
+
 function prefersReducedMotion() {
   const saved = storage.settings.reducedMotion;
   if (saved !== null && saved !== undefined) return saved;
@@ -312,6 +314,106 @@ function strikeOpponent(id) {
   refs.card.classList.remove('struck');
   void refs.card.offsetWidth;
   refs.card.classList.add('struck');
+}
+
+// ---------------------------------------------------------------------------
+// Suco de combate: ensino do cancelamento, bloqueio, projetil de ataque
+// ---------------------------------------------------------------------------
+
+let cancelamentoEnsinado = false;
+
+/**
+ * Ensina o cancelamento no momento exato em que ele importa: a PRIMEIRA vez que
+ * chega pressao para o jogador. Os testes com pessoas de verdade mostraram que
+ * ninguem descobria essa mecanica sozinho — e ela e o coracao do jogo. Uma
+ * frase, na hora certa, e so nas primeiras partidas.
+ */
+function ensinarCancelamento() {
+  if (cancelamentoEnsinado || storage.data.cancelamentoVisto) return;
+  cancelamentoEnsinado = true;
+
+  const dica = document.getElementById('coachTip');
+  if (!dica) return;
+  dica.textContent = '⚡ Faça um combo AGORA para cancelar o ataque!';
+  dica.classList.remove('hidden', 'saindo');
+  void dica.offsetWidth;
+  dica.classList.add('mostra');
+  vibrar(30);
+
+  setTimeout(() => {
+    dica.classList.remove('mostra');
+    dica.classList.add('saindo');
+    setTimeout(() => dica.classList.add('hidden'), 400);
+  }, 3200);
+}
+
+function marcarCancelamentoAprendido() {
+  storage.updateData({ cancelamentoVisto: true });
+}
+
+/**
+ * Retorno bem visivel quando o jogador CANCELA um ataque. E o que faz o cerebro
+ * ligar "combo -> defesa" e finalmente sacar a mecanica jogando.
+ */
+function celebrarCancelamento(qtd) {
+  renderer.floatText(`🛡 -${qtd}`, idx(1, 4), '#8fe3ff', true);
+  el.myBarTrack.classList.remove('bloqueou');
+  void el.myBarTrack.offsetWidth;
+  el.myBarTrack.classList.add('bloqueou');
+  vibrar(20);
+
+  // Depois que o jogador cancela na pratica, ele entendeu — pode parar de ver
+  // a dica em partidas futuras.
+  const dica = document.getElementById('coachTip');
+  if (dica) dica.classList.add('hidden');
+  marcarCancelamentoAprendido();
+}
+
+/**
+ * Ataque enviado: o numero do dano aparece sobre o tabuleiro, se comprime e
+ * VOA ate a miniatura do adversario alvo, que reage ao ser atingida. Da a
+ * sensacao fisica de "acertei ele" em vez de um numero solto.
+ */
+function dispararAtaque(targetId, units) {
+  const refs = opponentCards.get(targetId);
+  const canvasRect = el.canvas.getBoundingClientRect();
+
+  // Sem cartao do alvo (ex.: sozinho contra 1 e a miniatura fora da tela):
+  // ao menos marca o impacto.
+  if (!refs) {
+    strikeOpponent(targetId);
+    return;
+  }
+
+  const alvoRect = refs.card.getBoundingClientRect();
+  const proj = document.createElement('div');
+  proj.className = 'atk-proj';
+  proj.textContent = `-${units}`;
+
+  const x0 = canvasRect.left + canvasRect.width / 2;
+  const y0 = canvasRect.top + canvasRect.height * 0.12;
+  proj.style.left = x0 + 'px';
+  proj.style.top = y0 + 'px';
+  document.body.appendChild(proj);
+
+  const dx = alvoRect.left + alvoRect.width / 2 - x0;
+  const dy = alvoRect.top + alvoRect.height / 2 - y0;
+
+  // 1. surge grande e pulsa; 2. comprime e dispara ate o alvo.
+  requestAnimationFrame(() => {
+    proj.classList.add('lancado');
+    proj.style.transform = `translate(${dx}px, ${dy}px) scale(0.35)`;
+    proj.style.opacity = '0.2';
+  });
+
+  const chegou = () => {
+    proj.remove();
+    strikeOpponent(targetId); // o cartao treme no impacto
+    audio.play('attackSend');
+  };
+  proj.addEventListener('transitionend', chegou, { once: true });
+  // Rede de seguranca caso o transitionend nao dispare (aba em segundo plano).
+  setTimeout(() => proj.isConnected && chegou(), 700);
 }
 
 // ---------------------------------------------------------------------------
@@ -533,18 +635,11 @@ async function attemptMove(a, b) {
   }
 
   const info = session.reportLocalMove(result, a, b);
-  if (info) {
-    if (info.points > 0) {
-      renderer.floatText(`+${info.points}`, b, '#ffe27a', result.cascades >= 3);
-    }
-    // Cancelar e a jogada mais importante do jogo: precisa de retorno visual
-    // proprio, diferente de "ataquei".
-    if (info.cancelled > 0) {
-      renderer.floatText(`bloqueou ${info.cancelled}`, idx(2, 4), '#8fe3ff', true);
-    } else if (info.sent > 0) {
-      renderer.floatText(`ataque ${info.sent}`, idx(2, 4), '#ffb15c');
-    }
+  if (info && info.points > 0) {
+    renderer.floatText(`+${info.points}`, b, '#ffe27a', result.cascades >= 3);
   }
+  // O cancelamento e o ataque tem retorno proprio, mais forte, tratados nos
+  // ganchos onLocalMove/onAttackSent (celebrarCancelamento e dispararAtaque).
 
   // Tabuleiro sem jogada possivel: embaralha em vez de travar o jogador.
   if (!hasValidMove(grid)) {
@@ -661,7 +756,14 @@ function createSessionWithHooks() {
       updateScoreUI(true);
       updatePressureUI();
       updateComboUI();
-      if (info.cancelled > 0) audio.play('attackSend');
+      // Combo pegando fogo no centro do tabuleiro, a partir de x2.
+      if (info.combo >= 2) renderer.showCombo(info.combo);
+      if (info.cancelled > 0) {
+        // Cancelou o ataque que estava chegando: e a jogada mais importante do
+        // jogo. Retorno bem visivel, para o jogador LIGAR combo -> defesa.
+        audio.play('attackSend');
+        celebrarCancelamento(info.cancelled);
+      }
     },
 
     // Ataque ENFILEIRADO: ainda nao doeu, mas o relogio esta correndo.
@@ -669,6 +771,10 @@ function createSessionWithHooks() {
       updatePressureUI();
       audio.play('swapFail');
       announce(`Chegando: ${units} de pressão. Faça um combo para cancelar!`);
+      // Ensino no momento exato: a primeira vez que chega pressao, a pessoa e
+      // avisada de que pode cancelar. Foi o que os testes com gente mostraram
+      // faltar — ninguem descobria o cancelamento sozinho.
+      ensinarCancelamento();
     },
 
     onGarbage: (lixo) => {
@@ -691,8 +797,8 @@ function createSessionWithHooks() {
       updateDebugPanel();
     },
 
-    onAttackSent: (fromId, targetId) => {
-      if (fromId === session.localId) strikeOpponent(targetId);
+    onAttackSent: (fromId, targetId, units) => {
+      if (fromId === session.localId) dispararAtaque(targetId, units);
     },
 
     onPlayerEliminated: (id) => {

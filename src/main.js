@@ -170,6 +170,7 @@ function prefersReducedMotion() {
 
 function showScreen(name) {
   for (const key in screens) screens[key].classList.toggle('hidden', key !== name);
+  document.body.classList.toggle('tela-batalha', name === 'Battle');
   if (name === 'Battle') {
     // Na batalha a cena para: o tabuleiro ja tem o proprio laco pesado, e um
     // fundo animado atras dele so rouba quadros no celular.

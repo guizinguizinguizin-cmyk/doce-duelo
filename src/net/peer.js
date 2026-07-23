@@ -16,10 +16,42 @@ const HEARTBEAT_MS = 2500;
 const TIMEOUT_MS = 9000;
 const HOST_ID = 'p1';
 
+/**
+ * Servidores de descoberta e retransmissao da conexao direta.
+ *
+ * STUN so informa a cada lado qual e o proprio endereco publico; a conversa
+ * continua sendo direta entre os dois celulares. Isso resolve a maioria dos
+ * casos e nao custa nada.
+ *
+ * TURN e o plano B: quando a rede de um dos lados nao permite conexao direta
+ * (tipico de 4G e de wifi corporativo), o trafego passa por um servidor no
+ * meio. Sem TURN, esses jogadores simplesmente NAO CONECTAM, e para eles o
+ * jogo parece quebrado em vez de bloqueado pela operadora.
+ *
+ * Os TURN abaixo sao do plano gratuito publico do OpenRelay. Servem para
+ * testar com amigos; para valer, vale ter o proprio (as credenciais publicas
+ * sao compartilhadas com o mundo inteiro e tem limite de banda).
+ */
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
   { urls: 'stun:global.stun.twilio.com:3478' },
+  {
+    urls: 'turn:openrelay.metered.ca:80',
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+  {
+    urls: 'turn:openrelay.metered.ca:443',
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+  {
+    // Porta 443 em TCP: ultima carta quando a rede bloqueia UDP inteiro.
+    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
 ];
 
 /**
@@ -320,12 +352,20 @@ export function createNetwork(hooks = {}) {
 
       // Se o anfitriao existe mas nao responde, `open` nunca dispara e o
       // jogador fica olhando "Conectando..." para sempre.
+      // Distingue "codigo errado" de "rede bloqueou a conexao": sao problemas
+      // completamente diferentes, e mandar o jogador conferir o codigo quando
+      // o problema e a operadora dele so faz perder tempo.
       const timeout = setTimeout(() => {
         if (!hostConn || !hostConn.open) {
-          emit('onError', 'A sala não respondeu. Confira o código.', 'timeout');
+          emit(
+            'onError',
+            'Não consegui completar a conexão. Se vocês estão em redes diferentes ' +
+              '(um no Wi-Fi e outro no 4G), tentem os dois na mesma rede.',
+            'timeout'
+          );
           destroy();
         }
-      }, 12000);
+      }, 15000);
 
       hostConn.on('open', () => {
         clearTimeout(timeout);

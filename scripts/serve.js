@@ -9,11 +9,16 @@
 
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
-import { join, extname, normalize } from 'node:path';
+import { join, extname, normalize, resolve as resolverCaminho } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { networkInterfaces } from 'node:os';
 
-const ROOT = fileURLToPath(new URL('..', import.meta.url));
+// SERVE_ROOT permite apontar para dist/ (ou para uma pasta que a contenha
+// numa subpasta), e assim testar exatamente o que vai para o ar.
+// resolve() normaliza os separadores: no Windows um SERVE_ROOT com barras
+// normais nao bateria com o caminho montado por join(), e a guarda contra
+// path traversal recusaria tudo com 403.
+const ROOT = resolverCaminho(process.env.SERVE_ROOT || fileURLToPath(new URL('..', import.meta.url)));
 const PORT = Number(process.env.PORT) || 8080;
 
 const TIPOS = {
@@ -32,7 +37,10 @@ const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
     let pathname = decodeURIComponent(url.pathname);
-    if (pathname === '/') pathname = '/index.html';
+    // Qualquer caminho de pasta entrega o index de dentro dela, como faz
+    // qualquer hospedagem estatica. Sem isso, so a raiz funcionaria — e o
+    // jogo publicado numa subpasta (github.io/doce-duelo/) daria 404.
+    if (pathname.endsWith('/')) pathname += 'index.html';
 
     // Impede que "../.." escape da pasta do projeto.
     const alvo = join(ROOT, normalize(pathname).replace(/^(\.\.[/\\])+/, ''));

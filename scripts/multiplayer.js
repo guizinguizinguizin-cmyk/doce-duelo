@@ -18,7 +18,10 @@ import { fileURLToPath } from 'node:url';
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const PORTA_WEB = 8124;
 const PORTA_PEER = 9321;
-const BASE = `http://localhost:${PORTA_WEB}/?peer=localhost:${PORTA_PEER}`;
+// BASE_PATH permite testar servido de uma subpasta ('/doce-duelo/'), que e
+// como o GitHub Pages publica — caminho errado quebra so la.
+const BASE_PATH = process.env.BASE_PATH || '/';
+const BASE = `http://localhost:${PORTA_WEB}${BASE_PATH}?peer=localhost:${PORTA_PEER}`;
 
 const PAD = 10;
 const GAP = 4;
@@ -43,7 +46,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function esperarServidorWeb() {
   for (let i = 0; i < 50; i++) {
     try {
-      const r = await fetch(`http://localhost:${PORTA_WEB}/index.html`);
+      const r = await fetch(`http://localhost:${PORTA_WEB}${BASE_PATH}index.html`);
       if (r.ok) return true;
     } catch {
       /* subindo */

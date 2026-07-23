@@ -11,7 +11,8 @@
     "smoke": "node scripts/smoke.js",
     "balance": "node scripts/balance.js",
     "multiplayer": "node scripts/multiplayer.js",
-    "verify": "npm test && node scripts/smoke.js && node scripts/multiplayer.js"
+    "verify": "npm test && node scripts/smoke.js && node scripts/multiplayer.js",
+    "build": "node scripts/build.js"
   },
   "devDependencies": {
     "peer": "^1.0.2",

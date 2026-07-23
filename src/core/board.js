@@ -23,6 +23,43 @@ export const SPECIAL = {
   COLOR_BOMB: 4, // remove todas as pecas de uma cor
 };
 
+// ---------------------------------------------------------------------------
+// Obstaculos (lixo enviado pelo adversario)
+// ---------------------------------------------------------------------------
+
+/** Tipo das casas ocupadas por pedra ou gelo: nao tem cor, nao combina. */
+export const BLOCKED = -2;
+
+export const BLOCKER = {
+  /** Espaco morto. Nao troca, nao combina. Quebra com um match AO LADO. */
+  PEDRA: 'pedra',
+  /** Pedra teimosa: mesma regra, dois toques. */
+  GELO: 'gelo',
+  /** A peca continua com cor e COMBINA no lugar — so nao pode ser movida. */
+  CADEADO: 'cadeado',
+};
+
+export const BLOCKER_HP = {
+  [BLOCKER.PEDRA]: 1,
+  [BLOCKER.GELO]: 2,
+  [BLOCKER.CADEADO]: 1,
+};
+
+/** Pontos por camada de obstaculo removida. Limpar lixo tem de compensar. */
+const BLOCKER_POINTS = 30;
+
+/** Codigo usado na miniatura do adversario, fora da faixa das cores normais. */
+const BLOCKED_MINI = TYPE_COUNT;
+
+export const isBlocked = (cell) => !!(cell && cell.blocker);
+
+/**
+ * So pedra e gelo quebram por vizinhanca. O cadeado exige ser combinado —
+ * e essa a diferenca entre "ocupa espaco" e "restringe sua jogada".
+ */
+const quebraPorVizinhanca = (cell) =>
+  isBlocked(cell) && cell.blocker.tipo !== BLOCKER.CADEADO;
+
 // Formatos de explosao que so existem quando dois especiais sao combinados.
 // Ficam fora de SPECIAL porque nenhuma peca no tabuleiro guarda esses valores:
 // eles vivem apenas dentro de uma unica resolucao.
@@ -76,7 +113,14 @@ export function cloneGrid(grid) {
   const out = new Array(grid.length);
   for (let i = 0; i < grid.length; i++) {
     const c = grid[i];
-    out[i] = c ? { id: c.id, type: c.type, special: c.special } : null;
+    out[i] = c
+      ? {
+          id: c.id,
+          type: c.type,
+          special: c.special,
+          ...(c.blocker ? { blocker: { ...c.blocker } } : {}),
+        }
+      : null;
   }
   return out;
 }
@@ -152,35 +196,23 @@ export function hasAnyRun(grid) {
 export function findMove(grid) {
   // Uma bomba colorida sempre pode ser trocada com qualquer vizinho.
   for (let i = 0; i < CELL_COUNT; i++) {
-    if (grid[i] && grid[i].special === SPECIAL.COLOR_BOMB) {
+    if (grid[i] && grid[i].special === SPECIAL.COLOR_BOMB && !isBlocked(grid[i])) {
       const r = rowOf(i);
       const c = colOf(i);
-      if (inBounds(r, c + 1)) return { a: i, b: idx(r, c + 1) };
-      if (inBounds(r, c - 1)) return { a: i, b: idx(r, c - 1) };
-      if (inBounds(r + 1, c)) return { a: i, b: idx(r + 1, c) };
-      if (inBounds(r - 1, c)) return { a: i, b: idx(r - 1, c) };
+      const livre = (rr, cc) => inBounds(rr, cc) && !isBlocked(grid[idx(rr, cc)]);
+      if (livre(r, c + 1)) return { a: i, b: idx(r, c + 1) };
+      if (livre(r, c - 1)) return { a: i, b: idx(r, c - 1) };
+      if (livre(r + 1, c)) return { a: i, b: idx(r + 1, c) };
+      if (livre(r - 1, c)) return { a: i, b: idx(r - 1, c) };
     }
   }
 
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       const i = idx(r, c);
-      if (c < COLS - 1) {
-        const j = idx(r, c + 1);
-        if (comboKind(grid[i], grid[j])) return { a: i, b: j };
-        swapInPlace(grid, i, j);
-        const ok = hasAnyRun(grid);
-        swapInPlace(grid, i, j);
-        if (ok) return { a: i, b: j };
-      }
-      if (r < ROWS - 1) {
-        const j = idx(r + 1, c);
-        if (comboKind(grid[i], grid[j])) return { a: i, b: j };
-        swapInPlace(grid, i, j);
-        const ok = hasAnyRun(grid);
-        swapInPlace(grid, i, j);
-        if (ok) return { a: i, b: j };
-      }
+      if (isBlocked(grid[i])) continue;
+      if (c < COLS - 1 && isPlayableSwap(grid, i, idx(r, c + 1))) return { a: i, b: idx(r, c + 1) };
+      if (r < ROWS - 1 && isPlayableSwap(grid, i, idx(r + 1, c))) return { a: i, b: idx(r + 1, c) };
     }
   }
   return null;
@@ -211,6 +243,8 @@ export function allMoves(grid) {
 
 function isPlayableSwap(grid, a, b) {
   if (!grid[a] || !grid[b]) return false;
+  // Nenhum obstaculo pode ser arrastado — e essa a razao de ele atrapalhar.
+  if (isBlocked(grid[a]) || isBlocked(grid[b])) return false;
   if (comboKind(grid[a], grid[b])) return true;
   swapInPlace(grid, a, b);
   const ok = hasAnyRun(grid);
@@ -256,23 +290,34 @@ export function createGrid(rng) {
  * especial que o jogador tinha construido.
  */
 export function shuffleGrid(grid, rng) {
-  const cells = grid.filter(Boolean);
+  // Obstaculo fica onde esta. Embaralhar teleportando pedras seria uma segunda
+  // punicao aleatoria, e o jogador nao teria como planejar em volta delas.
+  const livres = [];
+  const soltas = [];
+  for (let i = 0; i < CELL_COUNT; i++) {
+    if (grid[i] && isBlocked(grid[i])) continue;
+    livres.push(i);
+    soltas.push(grid[i]);
+  }
 
   for (let attempt = 0; attempt < 200; attempt++) {
-    for (let i = cells.length - 1; i > 0; i--) {
+    for (let i = soltas.length - 1; i > 0; i--) {
       const j = rng.int(i + 1);
-      const t = cells[i];
-      cells[i] = cells[j];
-      cells[j] = t;
+      const t = soltas[i];
+      soltas[i] = soltas[j];
+      soltas[j] = t;
     }
-    for (let i = 0; i < cells.length; i++) grid[i] = cells[i];
+    for (let k = 0; k < livres.length; k++) grid[livres[k]] = soltas[k];
     if (!hasAnyRun(grid) && hasValidMove(grid)) return grid;
   }
 
   // Embaralhar nao resolveu (acontece com poucos tipos distintos restando):
-  // gerar do zero e melhor do que devolver um tabuleiro travado.
-  const fresh = createGrid(rng);
-  for (let i = 0; i < CELL_COUNT; i++) grid[i] = fresh[i];
+  // gerar pecas novas nas casas livres e melhor do que devolver um tabuleiro
+  // travado. Os obstaculos continuam intactos.
+  for (let attempt = 0; attempt < 60; attempt++) {
+    for (const i of livres) grid[i] = makeCell(rng.int(TYPE_COUNT));
+    if (!hasAnyRun(grid) && hasValidMove(grid)) return grid;
+  }
   return grid;
 }
 
@@ -434,6 +479,7 @@ function activationCells(grid, i, special, target) {
 function expandBlast(grid, seeds, protectedIdx, overrides) {
   const cleared = new Set();
   const activations = [];
+  const atingidos = new Set(); // obstaculos que levaram golpe direto
   const queue = [...seeds];
 
   while (queue.length) {
@@ -442,6 +488,13 @@ function expandBlast(grid, seeds, protectedIdx, overrides) {
     if (protectedIdx.has(i)) continue;
     const cell = grid[i];
     if (!cell) continue;
+
+    // Obstaculo absorve: leva dano, nao some nesta passagem e nao propaga a
+    // explosao adiante. E o que faz o lixo custar jogadas de verdade.
+    if (isBlocked(cell)) {
+      atingidos.add(i);
+      continue;
+    }
 
     cleared.add(i);
 
@@ -455,7 +508,63 @@ function expandBlast(grid, seeds, protectedIdx, overrides) {
     for (const t of cells) queue.push(t);
   }
 
-  return { cleared, activations };
+  return { cleared, activations, atingidos };
+}
+
+/**
+ * Pedra e gelo nao entram em combinacao nenhuma, entao a unica forma de
+ * quebra-los e um match ACONTECER AO LADO. Cadeado fica de fora: ele quebra
+ * sendo combinado, nao por vizinhanca.
+ */
+function atingirVizinhos(grid, cleared, jaAtingidos) {
+  const alvos = new Set(jaAtingidos);
+  for (const i of cleared) {
+    const r = rowOf(i);
+    const c = colOf(i);
+    const vizinhos = [
+      [r - 1, c],
+      [r + 1, c],
+      [r, c - 1],
+      [r, c + 1],
+    ];
+    for (const [rr, cc] of vizinhos) {
+      if (!inBounds(rr, cc)) continue;
+      const j = idx(rr, cc);
+      if (quebraPorVizinhanca(grid[j])) alvos.add(j);
+    }
+  }
+  return alvos;
+}
+
+/**
+ * Aplica um golpe em cada obstaculo atingido nesta fase.
+ *
+ * No maximo UM golpe por fase por obstaculo, mesmo que dez pecas ao redor
+ * sumam de uma vez. O jogador precisa conseguir prever quantas jogadas falta
+ * para limpar aquilo; dano proporcional ao tamanho da explosao tornaria o
+ * gelo imprevisivel.
+ */
+function aplicarDano(grid, alvos) {
+  const danos = [];
+  for (const i of alvos) {
+    const cell = grid[i];
+    if (!isBlocked(cell)) continue;
+
+    cell.blocker.hp -= 1;
+    const destruido = cell.blocker.hp <= 0;
+    danos.push({ index: i, tipo: cell.blocker.tipo, hp: Math.max(0, cell.blocker.hp), destruido });
+
+    if (!destruido) continue;
+    if (cell.type === BLOCKED) {
+      // Pedra e gelo nao tem peca por baixo: a casa fica vazia e a gravidade
+      // reabastece.
+      grid[i] = null;
+    } else {
+      // Cadeado liberta a peca, que continua no tabuleiro.
+      delete cell.blocker;
+    }
+  }
+  return danos;
 }
 
 // ---------------------------------------------------------------------------
@@ -608,9 +717,13 @@ export function resolve(grid, rng, options = {}) {
 
     cascade++;
     const protectedIdx = new Set(created.map((c) => c.index));
-    const { cleared, activations } = expandBlast(grid, base, protectedIdx, overrides);
+    const { cleared, activations, atingidos } = expandBlast(grid, base, protectedIdx, overrides);
 
-    const phasePoints = scorePhase(cleared.size, activations.length, created, cascade);
+    const alvos = atingirVizinhos(grid, cleared, atingidos);
+    const danos = aplicarDano(grid, alvos);
+
+    const phasePoints =
+      scorePhase(cleared.size, activations.length, created, cascade) + danos.length * BLOCKER_POINTS;
     points += phasePoints;
 
     for (const i of cleared) grid[i] = null;
@@ -632,6 +745,7 @@ export function resolve(grid, rng, options = {}) {
       cleared: [...cleared],
       activations,
       created,
+      danos,
       points: phasePoints,
       falls,
       spawns,
@@ -648,6 +762,7 @@ export function resolve(grid, rng, options = {}) {
 export function trySwap(grid, a, b, rng) {
   if (!areAdjacent(a, b)) return { ok: false, reason: 'nao-adjacente' };
   if (!grid[a] || !grid[b]) return { ok: false, reason: 'celula-vazia' };
+  if (isBlocked(grid[a]) || isBlocked(grid[b])) return { ok: false, reason: 'bloqueada' };
 
   swapInPlace(grid, a, b);
 
@@ -666,7 +781,70 @@ export function trySwap(grid, a, b, rng) {
   return { ok: true, comboKind: null, ...result };
 }
 
-/** Estado do tabuleiro em forma compacta, para enviar pela rede. */
+/**
+ * Estado do tabuleiro em forma compacta, para a miniatura do adversario.
+ * Obstaculo vira um codigo proprio, fora da faixa das cores: quem assiste
+ * precisa ver o lixo acumulando no tabuleiro alheio, e nunca pode receber um
+ * valor negativo, que a miniatura nao saberia pintar.
+ */
 export function serializeTypes(grid) {
-  return grid.map((c) => (c ? c.type : 0));
+  return grid.map((c) => {
+    if (!c) return 0;
+    if (isBlocked(c)) return BLOCKED_MINI;
+    return c.type >= 0 ? c.type : 0;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Lixo
+// ---------------------------------------------------------------------------
+
+/**
+ * Coloca obstaculos no tabuleiro (o lixo que o ataque do adversario vira).
+ *
+ * Evita a linha de baixo: obstaculo la embaixo trava a coluna inteira e e
+ * quase impossivel de alcancar. Nunca empilha obstaculo sobre obstaculo, e no
+ * fim garante que ainda exista jogada — receber lixo tem de doer, nao tem de
+ * travar a partida.
+ *
+ * Devolve as posicoes ocupadas, para o renderer animar a chegada.
+ */
+export function injectGarbage(grid, quantidade, tipo, rng) {
+  if (quantidade <= 0) return [];
+
+  const candidatas = [];
+  for (let r = 0; r < ROWS - 1; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const i = idx(r, c);
+      if (grid[i] && !isBlocked(grid[i])) candidatas.push(i);
+    }
+  }
+  if (!candidatas.length) return [];
+
+  // Fisher-Yates parcial com o gerador semeado: precisa ser reproduzivel no
+  // replay como qualquer outra decisao de regra.
+  const total = Math.min(quantidade, candidatas.length);
+  for (let k = 0; k < total; k++) {
+    const j = k + rng.int(candidatas.length - k);
+    const t = candidatas[k];
+    candidatas[k] = candidatas[j];
+    candidatas[j] = t;
+  }
+
+  const colocados = [];
+  for (let k = 0; k < total; k++) {
+    const i = candidatas[k];
+    const hp = BLOCKER_HP[tipo] || 1;
+    if (tipo === BLOCKER.CADEADO) {
+      // Cadeado mantem a peca e a cor; so prende no lugar.
+      grid[i] = { ...grid[i], blocker: { tipo, hp } };
+    } else {
+      grid[i] = { id: nextCellId++, type: BLOCKED, special: SPECIAL.NONE, blocker: { tipo, hp } };
+    }
+    colocados.push({ index: i, tipo, hp });
+  }
+
+  // O lixo pode ter tapado a ultima jogada possivel.
+  if (!hasValidMove(grid)) shuffleGrid(grid, rng);
+  return colocados;
 }

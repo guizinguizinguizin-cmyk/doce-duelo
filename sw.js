@@ -41,6 +41,8 @@ const ASSETS = [
   './src/game/rating.js',
   './src/game/ranks.js',
   './src/net/peer.js',
+  './src/net/leaderboard.js',
+  './src/leaderboard-config.js',
 ];
 
 const CACHE_FIRST = /\.(png|svg|jpg|jpeg|webp|woff2?)$|vendor\//;

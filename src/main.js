@@ -33,6 +33,7 @@ import { PRESSURE_MAX, streakMultiplier } from './game/balance.js';
 import { DIFFICULTIES } from './game/bot.js';
 import { createNetwork } from './net/peer.js';
 import { storage, suggestName } from './storage.js';
+import { enviarPontuacao, topJogadores, leaderboardAtivo } from './net/leaderboard.js';
 import { notaExibida, estaCalibrando, chanceDeVitoria } from './game/rating.js';
 import {
   RANKS,
@@ -109,6 +110,7 @@ const el = {
   rankProgresso: $('rankProgresso'),
   rankAtual: $('rankAtual'),
   rankLadder: $('rankLadder'),
+  leaderboardBody: $('leaderboardBody'),
   rankResultado: $('rankResultado'),
   rankResultadoSelo: $('rankResultadoSelo'),
   rankResultadoNome: $('rankResultadoNome'),
@@ -966,6 +968,19 @@ function finishMatch(winnerId, summary) {
     solo: summary.solo,
   });
 
+  // Manda a nota para o ranking mundial (se configurado). E um extra: se
+  // falhar, nao atrapalha o fim da partida em nada.
+  if (leaderboardAtivo()) {
+    const st = storage.stats;
+    enviarPontuacao({
+      name: storage.name,
+      rating: notaExibida(storage.rating),
+      rankId: rankDe(notaExibida(storage.rating)).id,
+      wins: st.wins,
+      games: st.games,
+    });
+  }
+
   el.resultEmoji.textContent = won ? '🏆' : '💥';
   el.resultTitle.textContent = won ? 'Você venceu!' : 'Você perdeu';
   el.resultTitle.className = won ? 'win' : 'lose';
@@ -1308,6 +1323,50 @@ function showStats() {
  * a mesma porta que a gente fechou de proposito. A escala mostra a ordem, o
  * selo e marca onde voce esta, e so.
  */
+/**
+ * Ranking mundial (Supabase). Mostra os melhores por nota, com selo e destaque
+ * na sua linha. Enquanto nao houver banco configurado, explica que esta sendo
+ * ativado — o jogo funciona igual sem ele.
+ */
+async function abrirPlacar() {
+  openModal('leaderboardModal');
+  const corpo = el.leaderboardBody;
+
+  if (!leaderboardAtivo()) {
+    corpo.innerHTML =
+      '<p class="lb-vazio">O ranking mundial está sendo ativado.<br>' +
+      'Em breve dá para ver os melhores do mundo aqui. 🌍</p>';
+    return;
+  }
+
+  corpo.innerHTML = '<p class="lb-vazio">Carregando...</p>';
+  const dados = await topJogadores(50);
+  if (!dados) {
+    corpo.innerHTML = '<p class="lb-vazio">Não consegui carregar o ranking agora.<br>Confira sua internet e tente de novo.</p>';
+    return;
+  }
+  if (!dados.lista.length) {
+    corpo.innerHTML = '<p class="lb-vazio">Ninguém no ranking ainda.<br>Jogue uma partida e seja o primeiro! 🏆</p>';
+    return;
+  }
+
+  const linhas = dados.lista.map((j, i) => {
+    const rank = rankDe(j.rating);
+    const eu = j.player_key === dados.eu;
+    const pos = i + 1;
+    const medalha = pos === 1 ? '🥇' : pos === 2 ? '🥈' : pos === 3 ? '🥉' : `${pos}`;
+    return (
+      `<div class="lb-row${eu ? ' eu' : ''}">` +
+      `<span class="lb-pos">${medalha}</span>` +
+      `<span class="lb-selo">${seloDoRank(rank, 30)}</span>` +
+      `<span class="lb-nome">${escapeHtml(j.name)}${eu ? ' <b>(você)</b>' : ''}</span>` +
+      `<span class="lb-rank" style="color:${rank.cor}">${rank.nome}</span>` +
+      `</div>`
+    );
+  });
+  corpo.innerHTML = linhas.join('');
+}
+
 function abrirModalRank() {
   const nota = storage.rating;
   const atual = rankDe(notaExibida(nota));
@@ -1528,6 +1587,12 @@ $('btnBackLobby').addEventListener('click', () => {
 $('btnRankCard').addEventListener('click', () => {
   audio.play('tap');
   abrirModalRank();
+});
+
+$('btnLeaderboard').addEventListener('click', () => {
+  audio.play('tap');
+  closeModal('rankModal');
+  abrirPlacar();
 });
 
 el.soundBtn.addEventListener('click', () => {

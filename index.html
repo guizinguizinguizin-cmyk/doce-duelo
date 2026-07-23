@@ -311,6 +311,8 @@
 
     <ul class="rank-ladder" id="rankLadder"></ul>
 
+    <button id="btnLeaderboard" class="big-btn primary" style="margin-bottom:6px">🌍 Ranking mundial</button>
+
     <div class="rank-como">
       <h3>Como funciona</h3>
       <ul>
@@ -321,6 +323,14 @@
       </ul>
     </div>
 
+    <button class="close-btn" data-close-modal>Fechar</button>
+  </div>
+</div>
+
+<div id="leaderboardModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="lbTitle">
+  <div class="modal-card">
+    <h2 id="lbTitle">🌍 Ranking mundial</h2>
+    <div id="leaderboardBody" class="leaderboard-body"></div>
     <button class="close-btn" data-close-modal>Fechar</button>
   </div>
 </div>

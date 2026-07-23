@@ -27,6 +27,7 @@ const ASSETS = [
   './src/core/board.js',
   './src/render/renderer.js',
   './src/render/gems.js',
+  './src/render/backdrop.js',
   './src/render/icons.js',
   './src/render/particles.js',
   './src/audio/audio.js',

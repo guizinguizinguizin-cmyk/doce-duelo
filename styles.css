@@ -1273,7 +1273,7 @@ input[type='checkbox'] {
 .bg-fx {
   position: fixed;
   inset: 0;
-  z-index: -2;
+  z-index: -3;
   overflow: hidden;
   pointer-events: none;
 }
@@ -1349,4 +1349,15 @@ input[type='checkbox'] {
 /* Menos animacao: congela o drift, mantem a atmosfera parada. */
 @media (prefers-reduced-motion: reduce) {
   .bg-fx .orb { animation: none; }
+}
+
+/* Cena de fundo (rua de doces + chuva), desenhada em src/render/backdrop.js.
+   Entre os orbes (-3) e o grao (-1). */
+.bg-scene {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -2;
+  pointer-events: none;
 }

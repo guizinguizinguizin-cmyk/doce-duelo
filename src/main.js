@@ -24,6 +24,7 @@ import {
   CELL_COUNT,
 } from './core/board.js';
 import { createRenderer } from './render/renderer.js';
+import { createBackdrop } from './render/backdrop.js';
 import { GEM_COLORS, BLOCKED_COLOR, drawGem } from './render/gems.js';
 import { ICONES, aplicarIcones } from './render/icons.js';
 import { createAudio } from './audio/audio.js';
@@ -135,6 +136,7 @@ const el = {
 
 const audio = createAudio();
 const renderer = createRenderer(el.canvas, { reducedMotion: prefersReducedMotion() });
+const backdrop = createBackdrop(document.getElementById('backdrop'));
 let network = null;
 let session = null;
 
@@ -167,10 +169,14 @@ function prefersReducedMotion() {
 function showScreen(name) {
   for (const key in screens) screens[key].classList.toggle('hidden', key !== name);
   if (name === 'Battle') {
+    // Na batalha a cena para: o tabuleiro ja tem o proprio laco pesado, e um
+    // fundo animado atras dele so rouba quadros no celular.
+    backdrop.stop();
     renderer.resize();
     renderer.start();
   } else {
     renderer.stop();
+    backdrop.start();
   }
 }
 
@@ -188,6 +194,7 @@ function applySettings() {
   audio.setSfxVolume(s.sfx);
   audio.setMuted(s.muted);
   renderer.setReducedMotion(prefersReducedMotion());
+  backdrop.setReducedMotion(prefersReducedMotion());
 
   el.musicSlider.value = Math.round(s.music * 100);
   el.sfxSlider.value = Math.round(s.sfx * 100);
@@ -1477,6 +1484,7 @@ function handleResize() {
   if (resizeTimer) clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
     if (!screens.Battle.classList.contains('hidden')) renderer.resize();
+    else backdrop.resize();
   }, 120);
 }
 
@@ -1485,8 +1493,13 @@ window.addEventListener('orientationchange', handleResize);
 
 // Aba escondida: pausa a musica para nao tocar no bolso do jogador.
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) audio.stopMusic();
-  else if (session && session.active) audio.startMusic();
+  if (document.hidden) {
+    audio.stopMusic();
+    backdrop.stop();
+  } else {
+    if (session && session.active) audio.startMusic();
+    if (screens.Battle.classList.contains('hidden')) backdrop.start();
+  }
 });
 
 // ---------------------------------------------------------------------------

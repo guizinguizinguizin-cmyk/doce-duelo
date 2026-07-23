@@ -10,7 +10,9 @@
 
 import { createGrid, allMoves, trySwap, cloneGrid, findMove, shuffleGrid, serializeTypes } from '../core/board.js';
 import { createRng } from '../core/rng.js';
-import { BAR_MAX, BAR_OVERFLOW_CAP, STREAK_TIMEOUT_MS, streakMultiplier, applyPower } from './balance.js';
+import { STREAK_TIMEOUT_MS, streakMultiplier } from './balance.js';
+import { createPressure } from './pressure.js';
+import { unitsForMove } from './attack.js';
 
 // Numeros calibrados por simulacao, nao por chute: `npm run balance` roda 400
 // partidas de cada combinacao com relogio virtual e reporta a taxa de vitoria.
@@ -26,39 +28,39 @@ export const DIFFICULTIES = {
     label: 'Fácil',
     descricao: 'Joga devagar e erra bastante. Bom para aprender.',
     // Meta: iniciante ganha ~65%
-    thinkMin: 3400,
-    thinkMax: 4800,
+    thinkMin: 3200,
+    thinkMax: 4200,
     // Fracao da lista de jogadas (ordenada da pior para a melhor) de onde ele
     // sorteia. 0.15 = escolhe quase em qualquer lugar; 1 = so a melhor.
-    skill: 0.1,
-    mistakeChance: 0.35,
+    skill: 0.25,
+    mistakeChance: 0.25,
   },
   normal: {
     label: 'Normal',
     descricao: 'Ritmo de um jogador humano atento. Partida disputada.',
     // Meta: jogador casual ganha ~50%
-    thinkMin: 1600,
-    thinkMax: 2500,
-    skill: 0.58,
-    mistakeChance: 0.12,
+    thinkMin: 2000,
+    thinkMax: 2800,
+    skill: 0.51,
+    mistakeChance: 0.13,
   },
   dificil: {
     label: 'Difícil',
     descricao: 'Rápido e quase sempre acha a jogada que mais pontua.',
     // Meta: jogador bom ganha ~50%
-    thinkMin: 1000,
-    thinkMax: 1650,
-    skill: 0.88,
-    mistakeChance: 0.03,
+    thinkMin: 1200,
+    thinkMax: 1780,
+    skill: 0.81,
+    mistakeChance: 0.045,
   },
   pesadelo: {
     label: 'Pesadelo',
     descricao: 'Implacável. Procura combos e não perde tempo.',
     // Meta: jogador bom ganha ~20%
-    thinkMin: 850,
-    thinkMax: 1300,
-    skill: 0.96,
-    mistakeChance: 0,
+    thinkMin: 1150,
+    thinkMax: 1750,
+    skill: 0.86,
+    mistakeChance: 0.02,
   },
 };
 
@@ -67,8 +69,8 @@ export function createBot({ id, name, difficulty = 'normal', seed, hooks = {} })
   const rng = createRng(seed);
 
   let grid = createGrid(rng);
+  const pressure = createPressure();
   let score = 0;
-  let bar = 0;
   let alive = true;
   let running = false;
   let timer = null;
@@ -115,7 +117,13 @@ export function createBot({ id, name, difficulty = 'normal', seed, hooks = {} })
 
   function emitState() {
     if (hooks.onState) {
-      hooks.onState({ id, score, bar, boardTypes: serializeTypes(grid) });
+      hooks.onState({
+        id,
+        score,
+        pressure: pressure.current,
+        pending: pressure.pending,
+        boardTypes: serializeTypes(grid),
+      });
     }
   }
 
@@ -135,16 +143,15 @@ export function createBot({ id, name, difficulty = 'normal', seed, hooks = {} })
 
         // `true` = usa o teto de sequencia dos bots. Ver balance.js: um bot
         // joga em intervalo fixo, entao a sequencia dele nunca expira.
-        const multiplier = streakMultiplier(comboStreak, true);
-        const points = Math.round(result.points * multiplier);
-        score += points;
+        score += Math.round(result.points * streakMultiplier(comboStreak, true));
 
-        // Mesma regra do jogador, vinda do mesmo modulo de balanceamento.
-        const { newBar, overflow } = applyPower(points, bar);
-        bar = newBar;
+        // Mesma tabela de ataque do jogador, e o mesmo modulo de pressao:
+        // o bot tambem cancela o que esta chegando antes de atacar.
+        const units = unitsForMove(result, comboStreak);
+        const { sobra } = pressure.spend(units);
 
         emitState();
-        if (overflow > 0 && hooks.onAttack) hooks.onAttack(id, overflow);
+        if (sobra > 0 && hooks.onAttack) hooks.onAttack(id, sobra);
       }
     }
 
@@ -175,25 +182,36 @@ export function createBot({ id, name, difficulty = 'normal', seed, hooks = {} })
       timer = setTimeout(playTurn, nextDelay() + 600);
     },
 
-    /** Ataque recebido de outro jogador. Devolve true se o bot foi eliminado. */
-    takeDamage(amount) {
-      if (!alive) return false;
-      bar = Math.min(BAR_OVERFLOW_CAP, bar + amount);
+    /** Ataque recebido: entra na fila de pendentes, igual ao do jogador. */
+    receiveAttack(units, from) {
+      if (!alive) return;
+      pressure.queueAttack(units, from);
       emitState();
-      if (bar >= BAR_MAX) {
-        alive = false;
-        stop();
-        if (hooks.onLose) hooks.onLose(id);
-        return true;
+    },
+
+    /**
+     * Converte pendentes vencidos em pressao real. Chamado pelo relogio da
+     * sessao, o mesmo que atende o jogador — assim o bot nao tem vantagem de
+     * temporizacao.
+     */
+    tick(now) {
+      if (!alive) return;
+      const entrou = pressure.tick(now);
+      if (entrou > 0) {
+        emitState();
+        if (pressure.dead) {
+          alive = false;
+          stop();
+          if (hooks.onLose) hooks.onLose(id);
+        }
       }
-      return false;
     },
 
     reset(newSeed) {
       stop();
       grid = createGrid(createRng(newSeed));
+      pressure.reset();
       score = 0;
-      bar = 0;
       alive = true;
       comboStreak = 0;
       emitState();
@@ -202,8 +220,11 @@ export function createBot({ id, name, difficulty = 'normal', seed, hooks = {} })
     get score() {
       return score;
     },
-    get bar() {
-      return bar;
+    get pressure() {
+      return pressure.current;
+    },
+    get pending() {
+      return pressure.pending;
     },
     get alive() {
       return alive;

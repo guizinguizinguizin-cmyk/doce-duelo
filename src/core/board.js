@@ -523,6 +523,18 @@ function computeMatchPhase(grid) {
 // Gravidade
 // ---------------------------------------------------------------------------
 
+/**
+ * Gerador do reabastecimento desta coluna.
+ *
+ * Numa partida competitiva `rng` traz um gerador por coluna (ver
+ * createMatchRandom), para os dois jogadores receberem a mesma sequencia de
+ * pecas em cada coluna independentemente do ritmo de cada um. Fora dai — bot
+ * simulando, teste — cai no gerador unico.
+ */
+function refillRng(rng, col) {
+  return rng.column ? rng.column(col) : rng;
+}
+
 function applyGravity(grid, rng) {
   const falls = [];
   const spawns = [];
@@ -542,9 +554,10 @@ function applyGravity(grid, rng) {
     }
     // `height` diz de quantas casas acima do topo a peca nova cai, para o
     // renderer escalonar a queda em vez de todas surgirem juntas.
+    const columnRng = refillRng(rng, c);
     let height = 1;
     for (let r = write; r >= 0; r--) {
-      const cell = makeCell(rng.int(TYPE_COUNT));
+      const cell = makeCell(columnRng.int(TYPE_COUNT));
       grid[idx(r, c)] = cell;
       spawns.push({ to: idx(r, c), id: cell.id, type: cell.type, height: height++ });
     }

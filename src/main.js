@@ -4,7 +4,7 @@
 // mora em src/core e src/game; todo desenho do tabuleiro mora em src/render.
 // Se algo aqui comecar a parecer "regra", esta no lugar errado.
 
-import { createRng } from './core/rng.js';
+import { createRng, createMatchRandom } from './core/rng.js';
 import {
   createGrid,
   trySwap,
@@ -24,7 +24,7 @@ import { createRenderer } from './render/renderer.js';
 import { GEM_COLORS } from './render/gems.js';
 import { createAudio } from './audio/audio.js';
 import { createSession } from './game/session.js';
-import { BAR_MAX, streakMultiplier } from './game/balance.js';
+import { PRESSURE_MAX, streakMultiplier } from './game/balance.js';
 import { DIFFICULTIES } from './game/bot.js';
 import { createNetwork } from './net/peer.js';
 import { storage, suggestName } from './storage.js';
@@ -76,7 +76,9 @@ const el = {
   comboBadge: $('comboBadge'),
   myBarTrack: $('myBarTrack'),
   myBarFill: $('myBarFill'),
+  myPendingFill: $('myPendingFill'),
   myBarCaption: $('myBarCaption'),
+  incomingBadge: $('incomingBadge'),
   battleHint: $('battleHint'),
   srAnnounce: $('srAnnounce'),
   btnHint: $('btnHint'),
@@ -114,7 +116,6 @@ let busy = false; // uma animacao de jogada esta em andamento
 let selected = null;
 let drag = null;
 let idleTimer = null;
-let comboTimer = null;
 
 let soloConfig = { difficulty: 'normal', opponents: 1 };
 let onlineConfig = { maxPlayers: 2 };
@@ -245,10 +246,14 @@ function renderOpponents(roster) {
     const refs = opponentCards.get(player.id) || buildOpponentCard(player);
     refs.name.textContent = player.name;
     refs.score.textContent = String(player.score ?? 0);
-    refs.fill.style.width = Math.min(100, player.bar ?? 0) + '%';
+    const pressaoPct = ((player.pressure ?? 0) / PRESSURE_MAX) * 100;
+    refs.fill.style.width = Math.min(100, pressaoPct) + '%';
     refs.card.classList.toggle('eliminated', !player.alive);
     refs.card.classList.toggle('leader', player.id === leaderId && player.alive);
-    refs.card.classList.toggle('danger', (player.bar ?? 0) > 75 && player.alive);
+    refs.card.classList.toggle(
+      'danger',
+      player.alive && ((player.pressure ?? 0) + (player.pending ?? 0)) / PRESSURE_MAX > 0.75
+    );
 
     if (player.boardTypes) {
       for (let i = 0; i < CELL_COUNT; i++) {
@@ -270,20 +275,51 @@ function strikeOpponent(id) {
 // HUD do jogador
 // ---------------------------------------------------------------------------
 
-function updateBarUI() {
-  const value = Math.min(BAR_MAX, session.localBar);
-  const pct = (value / BAR_MAX) * 100;
-  el.myBarFill.style.width = pct + '%';
-  el.myBarCaption.textContent = 'Pressão ' + Math.round(pct) + '%';
-  el.myBarTrack.setAttribute('aria-valuenow', String(Math.round(pct)));
+let alertaAnterior = 'normal';
 
-  el.myBarFill.classList.toggle('medio', pct >= 40 && pct < 70);
-  el.myBarFill.classList.toggle('alto', pct >= 70 && pct < 88);
-  el.myBarFill.classList.toggle('critico', pct >= 88);
+function updatePressureUI() {
+  if (!session) return;
+  const atual = session.pressure;
+  const pendente = session.pending;
+  const alerta = session.alert;
 
-  const danger = Math.max(0, (pct - 60) / 40);
-  renderer.setDanger(danger);
-  audio.setIntensity(pct / 100);
+  const pctAtual = (atual / PRESSURE_MAX) * 100;
+  const pctPendente = Math.max(0, Math.min(100 - pctAtual, (pendente / PRESSURE_MAX) * 100));
+
+  el.myBarFill.style.width = pctAtual + '%';
+  el.myPendingFill.style.left = pctAtual + '%';
+  el.myPendingFill.style.width = pctPendente + '%';
+  el.myBarCaption.textContent = `${atual} / ${PRESSURE_MAX}`;
+  el.myBarTrack.setAttribute('aria-valuenow', String(Math.round(pctAtual)));
+
+  el.myBarFill.classList.toggle('atencao', alerta === 'atencao');
+  el.myBarFill.classList.toggle('perigo', alerta === 'perigo');
+  el.myBarFill.classList.toggle('critico', alerta === 'critico');
+
+  if (pendente > 0) {
+    el.incomingBadge.textContent = '+' + pendente;
+    el.incomingBadge.classList.remove('hidden');
+  } else {
+    el.incomingBadge.classList.add('hidden');
+  }
+
+  const emPartida = session.active;
+  document.body.classList.toggle('perigo-perigo', emPartida && alerta === 'perigo');
+  document.body.classList.toggle('perigo-critico', emPartida && alerta === 'critico');
+
+  // O aviso usa ATUAL + PENDENTE: com 18 de pressao e 8 chegando o jogador ja
+  // esta morto se nao reagir, mesmo com a barra solida marcando so 70%.
+  const projetado = (atual + pendente) / PRESSURE_MAX;
+  renderer.setDanger(Math.max(0, (projetado - 0.55) / 0.45));
+  audio.setIntensity(Math.min(1, projetado));
+
+  if (alerta !== alertaAnterior) {
+    if (emPartida && alerta === 'critico') {
+      audio.play('danger');
+      if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
+    }
+    alertaAnterior = alerta;
+  }
 }
 
 function updateScoreUI(bump) {
@@ -364,9 +400,18 @@ async function attemptMove(a, b) {
   await renderer.animateSwap(a, b);
   await playPhases(result.phases);
 
-  const points = session.reportLocalPoints(result.points, result.cascades);
-  if (points > 0) {
-    renderer.floatText(`+${points}`, b, '#ffe27a', result.cascades >= 3);
+  const info = session.reportLocalMove(result);
+  if (info) {
+    if (info.points > 0) {
+      renderer.floatText(`+${info.points}`, b, '#ffe27a', result.cascades >= 3);
+    }
+    // Cancelar e a jogada mais importante do jogo: precisa de retorno visual
+    // proprio, diferente de "ataquei".
+    if (info.cancelled > 0) {
+      renderer.floatText(`bloqueou ${info.cancelled}`, idx(2, 4), '#8fe3ff', true);
+    } else if (info.sent > 0) {
+      renderer.floatText(`ataque ${info.sent}`, idx(2, 4), '#ffb15c');
+    }
   }
 
   // Tabuleiro sem jogada possivel: embaralha em vez de travar o jogador.
@@ -478,21 +523,31 @@ function createSessionWithHooks() {
       renderRosterList(roster);
     },
 
-    onLocalScore: (points, total, streak) => {
+    onLocalMove: (info) => {
       updateScoreUI(true);
-      updateBarUI();
+      updatePressureUI();
       updateComboUI();
-      if (streak >= 3) audio.play('attackSend');
+      if (info.cancelled > 0) audio.play('attackSend');
     },
 
-    onLocalDamage: (amount) => {
-      updateBarUI();
-      renderer.shake(Math.min(22, 6 + amount * 0.55));
+    // Ataque ENFILEIRADO: ainda nao doeu, mas o relogio esta correndo.
+    onIncoming: (units) => {
+      updatePressureUI();
+      audio.play('swapFail');
+      announce(`Chegando: ${units} de pressão. Faça um combo para cancelar!`);
+    },
+
+    // Pendente venceu e virou pressao de verdade. Agora sim doi.
+    onPressureLanded: (units) => {
+      updatePressureUI();
+      renderer.shake(Math.min(24, 7 + units * 2.2));
       renderer.flash('rgba(255,60,60,0.42)', 0.5);
       audio.play('attackTake');
-      if (navigator.vibrate) navigator.vibrate(40);
-      announce('Você levou um ataque!');
+      if (navigator.vibrate) navigator.vibrate(45);
+      renderer.floatText(`-${units}`, idx(0, 4), '#ff8a8a', true);
     },
+
+    onTick: () => updatePressureUI(),
 
     onAttackSent: (fromId, targetId) => {
       if (fromId === session.localId) strikeOpponent(targetId);
@@ -552,7 +607,10 @@ function startCountdown(semente) {
 }
 
 function beginBattle(semente) {
-  rng = createRng(semente);
+  // createMatchRandom da um gerador por COLUNA a partir da semente da partida.
+  // E o que garante que os dois jogadores recebam a mesma sequencia de doces
+  // em cada coluna, independentemente de quem cascateou mais. Ver rng.js.
+  rng = createMatchRandom(semente, COLS);
   grid = createGrid(rng);
 
   busy = false;
@@ -560,7 +618,7 @@ function beginBattle(semente) {
 
   el.myNameLabel.textContent = storage.name || 'Você';
   updateScoreUI(false);
-  updateBarUI();
+  updatePressureUI();
   updateComboUI();
   el.battleHint.textContent = 'Arraste um doce para o vizinho para trocar';
 
@@ -578,16 +636,15 @@ function beginBattle(semente) {
 
   audio.startMusic();
 
-  if (comboTimer) clearInterval(comboTimer);
-  comboTimer = setInterval(() => session && session.decayCombo(), 900);
 }
 
 function finishMatch(winnerId, summary) {
   busy = true;
   if (idleTimer) clearTimeout(idleTimer);
-  if (comboTimer) clearInterval(comboTimer);
   audio.stopMusic();
   audio.setIntensity(0);
+  document.body.classList.remove('perigo-perigo', 'perigo-critico');
+  alertaAnterior = 'normal';
 
   const won = summary.won;
   const records = storage.recordMatch({
@@ -616,10 +673,12 @@ function finishMatch(winnerId, summary) {
 
   el.resultStats.innerHTML = '';
   const stats = [
-    { value: summary.score, label: 'Pontos' },
+    { value: summary.unitsSent ?? 0, label: 'Ataque enviado' },
+    { value: summary.unitsCancelled ?? 0, label: 'Pressão cancelada' },
+    { value: summary.apm ?? 0, label: 'Ataque por min' },
     { value: 'x' + summary.bestCombo, label: 'Maior combo' },
     { value: summary.bestCascade, label: 'Maior cascata' },
-    { value: storage.stats.wins, label: 'Vitórias totais' },
+    { value: summary.score, label: 'Pontos' },
   ];
   for (const stat of stats) {
     const box = document.createElement('div');

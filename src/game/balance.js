@@ -1,36 +1,76 @@
 // Constantes de balanceamento, num lugar so.
 //
-// Estavam duplicadas entre session.js e bot.js (o divisor `/8`, a janela de
-// combo, o teto do multiplicador). Numero de balanceamento duplicado sempre
-// diverge: alguem ajusta um lado, esquece o outro, e o bot passa a jogar com
-// regras diferentes das do jogador. Como o bot precisa ser honesto para o modo
-// solo valer alguma coisa, isso e um bug esperando acontecer.
+// Estavam duplicadas entre session.js e bot.js (o divisor, a janela de combo,
+// o teto). Numero de balanceamento duplicado sempre diverge: alguem ajusta um
+// lado, esquece o outro, e o bot passa a jogar com regras diferentes das do
+// jogador. Como o bot precisa ser honesto para o modo solo valer alguma coisa,
+// isso e um bug esperando acontecer.
 //
-// Tudo aqui e afinado por teste de jogo. Ao mexer, rodar `npm run balance`.
+// Tudo aqui e afinado por medicao: `npm run balance` roda centenas de partidas
+// com relogio virtual e reporta taxa de vitoria e duracao.
 
-/** Barra cheia = eliminado. */
-export const BAR_MAX = 100;
-
-/** Teto acima do maximo, para o golpe final ser visivel antes da eliminacao. */
-export const BAR_OVERFLOW_CAP = 150;
+// ---------------------------------------------------------------------------
+// Pressao
+// ---------------------------------------------------------------------------
 
 /**
- * Quanta pontuacao vira 1 ponto de barra.
+ * Pressao maxima, em UNIDADES inteiras. Chegou no teto, colapso.
  *
- * Numero MENOR = partida mais violenta. Estava em 8, e a partida solo acabava
- * em ~12 segundos: um jogador mediano faz uns 45 pontos por segundo, o que a
- * 8 dava 5,6 de barra por segundo — barra cheia em 18s sem nenhuma troca de
- * golpes. A 20 a partida respira e da tempo de reagir a um ataque.
+ * Unidades inteiras em vez de porcentagem porque o jogador precisa conseguir
+ * contar: "estou em 14 de 20, vem 5 chegando, preciso cancelar 5 ou morro".
+ * Essa conta e impossivel com dano fracionario. A interface mostra porcentagem
+ * porque le melhor numa barra, mas por baixo e tudo inteiro.
  */
-export const BAR_DIVISOR = 20;
+export const PRESSURE_MAX = 26;
 
-/** Tempo sem pontuar que zera a sequencia de combo. */
-export const STREAK_TIMEOUT_MS = 4000;
+/**
+ * Quanto tempo um ataque fica PENDENTE antes de virar pressao de verdade.
+ *
+ * Este numero e o coracao do jogo. Ataque que entra na hora nao tem
+ * counterplay: voce so assiste. Com uma janela, receber pressao vira uma
+ * pergunta — "consigo montar um combo em 3,5 segundos?" — e e dessa pergunta
+ * que sai a tensao. Curto demais e injusto; longo demais e o ataque perde
+ * peso e vira sugestao.
+ */
+export const PENDING_DELAY_MS = 3500;
 
-/** Quanto cada nivel de sequencia adiciona ao multiplicador. */
+/** Limiares de alerta, como fracao de PRESSURE_MAX. */
+export const ALERT_TIERS = {
+  atencao: 0.6,
+  perigo: 0.8,
+  critico: 0.95,
+};
+
+/**
+ * Nivel de alerta a partir da pressao ATUAL + PENDENTE.
+ *
+ * Somar as duas e o ponto: com 14 de pressao e 7 chegando, o jogador ja esta
+ * morto se nao reagir, mesmo que a barra "atual" mostre so 70%. Alertar so
+ * pela pressao atual avisaria tarde demais — quando ja nao ha o que fazer.
+ */
+export function alertLevel(current, pending) {
+  const total = (current + pending) / PRESSURE_MAX;
+  if (total >= ALERT_TIERS.critico) return 'critico';
+  if (total >= ALERT_TIERS.perigo) return 'perigo';
+  if (total >= ALERT_TIERS.atencao) return 'atencao';
+  return 'normal';
+}
+
+// ---------------------------------------------------------------------------
+// Combo (usado para PONTUACAO; o ataque tem a tabela propria em attack.js)
+// ---------------------------------------------------------------------------
+
+/**
+ * Tempo sem pontuar que zera a sequencia de combo.
+ *
+ * Estava em 4000 e punia o jogador lento DUAS vezes: alem de jogar menos, ele
+ * perdia a sequencia toda vez, porque um iniciante pensa ~3,6s por jogada e
+ * ficava bem na borda da janela. Como o bonus de combo ja e multiplicativo em
+ * cima de uma vantagem de velocidade que e linear, isso tornava a partida
+ * binaria. Em 6000 o ritmo humano normal sustenta a sequencia.
+ */
+export const STREAK_TIMEOUT_MS = 6000;
 export const STREAK_STEP = 0.2;
-
-/** Niveis de sequencia contados acima do primeiro. */
 export const STREAK_CAP = 5;
 
 /**
@@ -43,7 +83,6 @@ export const STREAK_CAP = 5;
  */
 export const BOT_STREAK_CAP = 3;
 
-/** Multiplicador de sequencia a partir do numero de jogadas seguidas. */
 export function streakMultiplier(streak, isBot = false) {
   if (streak < 2) return 1;
   const cap = isBot ? BOT_STREAK_CAP : STREAK_CAP;
@@ -54,20 +93,18 @@ export function streakMultiplier(streak, isBot = false) {
 // Escalada (morte subita)
 // ---------------------------------------------------------------------------
 
-/** Quando o dano comeca a crescer. Antes disso a partida corre normal. */
 export const ESCALATION_START_MS = 75_000;
-/** Quando o dano atinge o multiplicador maximo. */
 export const ESCALATION_FULL_MS = 210_000;
-export const ESCALATION_MAX = 4;
+export const ESCALATION_MAX = 3;
 
 /**
- * Multiplicador de dano em funcao do tempo de partida.
+ * Multiplicador de ataque em funcao do tempo de partida.
  *
  * Existe porque dois jogadores fracos quase nao se arranham: na simulacao,
  * 31% das partidas de iniciante contra bot facil passavam de SEIS MINUTOS.
  * Isso nao se conserta calibrando forca — se os dois batem pouco, a partida
- * nao acaba, ponto. A escalada resolve pela estrutura, e sem efeito nenhum
- * numa partida de duracao normal, porque so liga depois de 75 segundos.
+ * nao acaba, ponto. Sem efeito nenhum numa partida de duracao normal, porque
+ * so liga depois de 75 segundos.
  */
 export function escalation(elapsedMs) {
   if (elapsedMs <= ESCALATION_START_MS) return 1;
@@ -75,15 +112,8 @@ export function escalation(elapsedMs) {
   return 1 + t * (ESCALATION_MAX - 1);
 }
 
-/**
- * Converte pontuacao em "forca": primeiro limpa a propria barra, o resto vira
- * ataque. E essa regra que faz uma cascata grande ser defesa E ataque ao mesmo
- * tempo, e e o coracao da decisao tatica do jogo.
- */
-export function applyPower(points, currentBar) {
-  const power = points / BAR_DIVISOR;
-  if (currentBar >= power) {
-    return { newBar: currentBar - power, overflow: 0 };
-  }
-  return { newBar: 0, overflow: power - currentBar };
+/** Aplica a escalada mantendo o resultado inteiro (minimo 1 se havia ataque). */
+export function escalateUnits(units, elapsedMs) {
+  if (units <= 0) return 0;
+  return Math.max(1, Math.floor(units * escalation(elapsedMs)));
 }

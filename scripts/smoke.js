@@ -181,6 +181,26 @@ try {
     falhar(`o bot nao pontuou em 6s (parado em ${pontosBotAntes})`);
   }
 
+  // ---- a pressao pendente aparece de verdade? ----
+  // E a mecanica central do jogo: o ataque do bot precisa ficar visivel na
+  // fila ANTES de virar dano, senao o jogador nao tem como reagir.
+  let viuPendente = false;
+  let maiorPendente = '';
+  for (let i = 0; i < 60 && !viuPendente; i++) {
+    const visivel = await pagina.locator('#incomingBadge:not(.hidden)').count();
+    if (visivel) {
+      maiorPendente = await pagina.locator('#incomingBadge').innerText();
+      const largura = await pagina.locator('#myPendingFill').evaluate((n) => n.style.width);
+      viuPendente = parseFloat(largura) > 0;
+      if (viuPendente) {
+        await pagina.screenshot({ path: 'scripts/.saida/pendente.png' });
+        ok(`pressao pendente visivel na fila (${maiorPendente}, faixa ${largura})`);
+      }
+    }
+    await sleep(500);
+  }
+  if (!viuPendente) falhar('o bot atacou mas a pressao pendente nunca apareceu na interface');
+
   await pagina.screenshot({ path: 'scripts/.saida/partida.png' });
 
   // ---- estabilidade sob toque aleatorio ----

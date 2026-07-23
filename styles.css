@@ -673,35 +673,70 @@ main {
   100% { transform: scale(1); }
 }
 
-.bar-track-h {
-  position: relative;
+.pressure-row {
   width: 100%;
-  height: 20px;
-  background: var(--bg-deep);
-  border-radius: 10px;
-  overflow: hidden;
-  border: 1px solid var(--edge);
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-bottom: 11px;
 }
 
+.bar-track-h {
+  position: relative;
+  flex: 1;
+  height: 22px;
+  background: var(--bg-deep);
+  border-radius: 11px;
+  overflow: hidden;
+  border: 1px solid var(--edge);
+}
+
 .bar-fill-h {
+  position: absolute;
+  left: 0;
+  top: 0;
   height: 100%;
   width: 0%;
-  border-radius: 9px;
-  transition: width 0.35s cubic-bezier(0.22, 1, 0.36, 1), background 0.4s ease;
+  border-radius: 10px;
+  transition: width 0.3s cubic-bezier(0.22, 1, 0.36, 1), background 0.4s ease;
   background: linear-gradient(90deg, var(--safe), #7fe0a8);
 }
 
-.bar-fill-h.medio { background: linear-gradient(90deg, var(--warn), #ffd07a); }
-.bar-fill-h.alto { background: linear-gradient(90deg, #ff7043, var(--danger)); }
+/* Pressão pendente: encostada no fim da pressão atual, listrada e em
+   movimento. Precisa ser visivelmente DIFERENTE do dano já efetivado —
+   é a diferença entre "perdi isso" e "ainda dá para cancelar". */
+.bar-pending {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  width: 0%;
+  left: 0%;
+  transition: width 0.25s ease, left 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(255, 255, 255, 0.85) 0 6px,
+    rgba(255, 170, 60, 0.9) 6px 12px
+  );
+  background-size: 17px 17px;
+  animation: pendingScroll 0.7s linear infinite;
+  opacity: 0.92;
+}
+
+@keyframes pendingScroll {
+  from { background-position: 0 0; }
+  to { background-position: 17px 0; }
+}
+
+.bar-fill-h.atencao { background: linear-gradient(90deg, var(--warn), #ffd07a); }
+.bar-fill-h.perigo { background: linear-gradient(90deg, #ff7043, var(--danger)); }
 .bar-fill-h.critico {
   background: linear-gradient(90deg, var(--danger), #ff8a8a);
-  animation: barPulse 0.75s ease-in-out infinite;
+  animation: barPulse 0.55s ease-in-out infinite;
 }
 
 @keyframes barPulse {
   0%, 100% { filter: brightness(1); }
-  50% { filter: brightness(1.45); }
+  50% { filter: brightness(1.5); }
 }
 
 .bar-caption {
@@ -713,8 +748,55 @@ main {
   font-weight: 800;
   letter-spacing: 0.05em;
   color: #fff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
   pointer-events: none;
+  font-variant-numeric: tabular-nums;
+  z-index: 2;
+}
+
+/* Contador do que está chegando. É o número que o jogador precisa bater. */
+.incoming-badge {
+  min-width: 42px;
+  padding: 4px 9px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #ff7043, var(--danger));
+  color: #fff;
+  font-weight: 900;
+  font-size: 0.86rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 14px rgba(255, 77, 77, 0.55);
+  animation: incomingPulse 0.8s ease-in-out infinite;
+}
+
+@keyframes incomingPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.09); }
+}
+
+/* Estado crítico: a tela inteira avisa, não só a barra. */
+body.perigo-critico::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 40;
+  box-shadow: inset 0 0 90px 18px rgba(255, 40, 40, 0.55);
+  animation: dangerVignette 0.62s ease-in-out infinite;
+}
+
+@keyframes dangerVignette {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+body.perigo-perigo::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 40;
+  box-shadow: inset 0 0 70px 10px rgba(255, 120, 40, 0.32);
 }
 
 .board-wrap { width: 100%; display: flex; justify-content: center; }

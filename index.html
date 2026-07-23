@@ -168,10 +168,16 @@
         </div>
       </div>
 
-      <div class="bar-track-h" role="progressbar" aria-label="Sua barra de pressão"
-           aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="myBarTrack">
-        <div class="bar-fill-h" id="myBarFill"></div>
-        <span class="bar-caption" id="myBarCaption">Pressão 0%</span>
+      <!-- Barra de pressão: a parte sólida é o que já doeu, a parte listrada
+           é o que está a caminho e ainda dá para cancelar. -->
+      <div class="pressure-row">
+        <div class="bar-track-h" role="progressbar" aria-label="Sua pressão"
+             aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="myBarTrack">
+          <div class="bar-fill-h" id="myBarFill"></div>
+          <div class="bar-pending" id="myPendingFill"></div>
+          <span class="bar-caption" id="myBarCaption">0 / 26</span>
+        </div>
+        <div class="incoming-badge hidden" id="incomingBadge" aria-live="polite"></div>
       </div>
 
       <div class="board-wrap">
@@ -270,13 +276,20 @@
     <h2 id="tutTitle">Como jogar</h2>
     <ol class="tutorial-list">
       <li><b>Troque</b> dois doces vizinhos para alinhar 3 ou mais.</li>
-      <li><b>Cascatas</b> valem muito mais: cada explosão em sequência multiplica os pontos.</li>
-      <li><b>4 em linha</b> cria um doce listrado que limpa a fileira inteira.</li>
-      <li><b>Formato de L</b> cria um doce embrulhado que explode em volta.</li>
-      <li><b>5 em linha</b> cria a bomba colorida — troque com qualquer doce para varrer aquela cor.</li>
-      <li>Seus pontos <b>esvaziam sua barra</b>; o que sobra vira ataque no adversário.</li>
-      <li>Barra cheia = eliminado. <b>O último de pé vence.</b></li>
+      <li>Alinhar 3 não ataca. O ataque vem de <b>4 em linha</b> (1), <b>5 em linha</b> (2)
+        e <b>formato de L ou T</b> (3).</li>
+      <li><b>Cascatas e combos multiplicam</b> o ataque. É aí que a partida vira.</li>
+      <li>O ataque que você recebe <b>não entra na hora</b>: ele fica na fila listrada por
+        alguns segundos.</li>
+      <li>Enquanto está na fila, dá para <b>cancelar</b>. Todo ataque seu abate primeiro o
+        que está chegando — só o que sobra vai para o adversário.</li>
+      <li>Olhe o número <b>+N</b> ao lado da barra: é quanto você precisa gerar para não
+        levar nada.</li>
+      <li>Barra de pressão cheia = eliminado. <b>O último de pé vence.</b></li>
     </ol>
+    <p class="modal-sub">
+      Resumo: <b>alinhar 3 sobrevive, combo vence.</b>
+    </p>
     <button class="close-btn" data-close-modal>Entendi, bora!</button>
   </div>
 </div>

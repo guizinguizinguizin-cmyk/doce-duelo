@@ -2,27 +2,31 @@
 //
 // Afinar duracao de partida jogando manualmente e lento e pouco confiavel: uma
 // partida boa e uma ruim nao dizem nada sobre a mediana. Este script roda
-// milhares de partidas com relogio VIRTUAL (sem setTimeout, sem esperar tempo
-// real) usando exatamente as mesmas regras do jogo, e reporta a distribuicao.
+// centenas de partidas com relogio VIRTUAL (sem setTimeout, sem esperar tempo
+// real) usando exatamente os mesmos modulos do jogo — mesmo tabuleiro, mesma
+// tabela de ataque, mesma fila de pressao.
 //
-// Serve para responder: "quanto tempo dura uma partida?" e "um jogador mediano
-// consegue ganhar do bot no normal?" — antes de publicar, nao depois.
+// Responde antes de publicar: "quanto dura uma partida?", "o casual ganha do
+// bot normal?", "o cancelamento esta fazendo diferenca ou e enfeite?"
 //
 //   npm run balance
 
-import { createRng } from '../src/core/rng.js';
-import { createGrid, allMoves, trySwap, cloneGrid, findMove, shuffleGrid } from '../src/core/board.js';
-import { BAR_MAX, STREAK_TIMEOUT_MS, streakMultiplier, applyPower, BAR_DIVISOR, escalation } from '../src/game/balance.js';
+import { createRng, createMatchRandom } from '../src/core/rng.js';
+import { createGrid, allMoves, trySwap, cloneGrid, findMove, shuffleGrid, COLS } from '../src/core/board.js';
+import { createPressure } from '../src/game/pressure.js';
+import { unitsForMove } from '../src/game/attack.js';
+import {
+  PRESSURE_MAX,
+  PENDING_DELAY_MS,
+  STREAK_TIMEOUT_MS,
+  streakMultiplier,
+  escalateUnits,
+} from '../src/game/balance.js';
 import { DIFFICULTIES } from '../src/game/bot.js';
 
-const TEMPO_MAXIMO_MS = 6 * 60 * 1000; // partida que passa disso conta como arrastada
+const TEMPO_MAXIMO_MS = 6 * 60 * 1000;
 
-/**
- * Um agente e "um jogador" — humano ou bot, o modelo e o mesmo.
- * `skill` 0..1 = de que ponto da lista de jogadas ordenadas ele escolhe.
- * `thinkMs` = intervalo medio entre jogadas.
- */
-function criarAgente({ nome, thinkMs, skill, seed, isBot, mistakeChance = 0 }) {
+function criarAgente({ nome, thinkMs, skill, isBot, mistakeChance = 0 }, seed, matchSeed) {
   const rng = createRng(seed);
   return {
     nome,
@@ -31,15 +35,20 @@ function criarAgente({ nome, thinkMs, skill, seed, isBot, mistakeChance = 0 }) {
     isBot,
     mistakeChance,
     rng,
-    grid: createGrid(rng),
+    // Aleatoriedade por coluna a partir da MESMA semente de partida para os
+    // dois agentes: e assim que o jogo garante oportunidades iguais.
+    boardRng: createMatchRandom(matchSeed, COLS),
+    grid: createGrid(createRng(matchSeed)),
+    pressure: createPressure(),
     score: 0,
-    bar: 0,
     streak: 0,
     ultimaJogada: -Infinity,
     proximaJogada: 0,
     vivo: true,
     jogadas: 0,
-    danoEnviado: 0,
+    enviado: 0,
+    cancelado: 0,
+    recebido: 0,
   };
 }
 
@@ -47,15 +56,13 @@ function escolherJogada(agente) {
   const jogadas = allMoves(agente.grid);
   if (!jogadas.length) return null;
 
-  // Mesmo "erro bobo" que o bot real comete (ver chooseMove em bot.js).
   if (agente.rng.next() < agente.mistakeChance) {
     return jogadas[agente.rng.int(jogadas.length)];
   }
 
   const avaliadas = jogadas.map((jogada) => {
     const copia = cloneGrid(agente.grid);
-    const r = agente.rng.fork();
-    const resultado = trySwap(copia, jogada.a, jogada.b, r);
+    const resultado = trySwap(copia, jogada.a, jogada.b, agente.rng.fork());
     return { jogada, valor: resultado.ok ? resultado.points + resultado.cascades * 12 : -1 };
   });
   avaliadas.sort((a, b) => a.valor - b.valor);
@@ -66,39 +73,47 @@ function escolherJogada(agente) {
 }
 
 function simularPartida(configA, configB, seed) {
-  const a = criarAgente({ ...configA, seed: seed ^ 0x9e3779b9 });
-  const b = criarAgente({ ...configB, seed: seed ^ 0x85ebca6b });
+  const matchSeed = seed >>> 0;
+  const a = criarAgente(configA, (seed ^ 0x9e3779b9) >>> 0, matchSeed);
+  const b = criarAgente(configB, (seed ^ 0x85ebca6b) >>> 0, matchSeed);
   const agentes = [a, b];
 
   let t = 0;
   while (a.vivo && b.vivo && t < TEMPO_MAXIMO_MS) {
-    // Avanca o relogio direto para quem joga primeiro.
     const atual = agentes.reduce((x, y) => (x.proximaJogada <= y.proximaJogada ? x : y));
     t = atual.proximaJogada;
     const alvo = atual === a ? b : a;
 
-    if (!findMove(atual.grid)) shuffleGrid(atual.grid, atual.rng);
+    // Converte pendentes vencidos em pressao real, nos dois lados.
+    for (const agente of agentes) {
+      const entrou = agente.pressure.tick(t);
+      if (entrou > 0) {
+        agente.recebido += entrou;
+        if (agente.pressure.dead) agente.vivo = false;
+      }
+    }
+    if (!a.vivo || !b.vivo) break;
+
+    if (!findMove(atual.grid)) shuffleGrid(atual.grid, atual.boardRng);
 
     const jogada = escolherJogada(atual);
     if (jogada) {
-      const resultado = trySwap(atual.grid, jogada.a, jogada.b, atual.rng);
+      const resultado = trySwap(atual.grid, jogada.a, jogada.b, atual.boardRng);
       if (resultado.ok && resultado.points > 0) {
         if (t - atual.ultimaJogada > STREAK_TIMEOUT_MS) atual.streak = 0;
         atual.streak += 1;
         atual.ultimaJogada = t;
         atual.jogadas += 1;
+        atual.score += Math.round(resultado.points * streakMultiplier(atual.streak, atual.isBot));
 
-        const pontos = Math.round(resultado.points * streakMultiplier(atual.streak, atual.isBot));
-        atual.score += pontos;
+        const units = unitsForMove(resultado, atual.streak);
+        const { sobra, cancelado } = atual.pressure.spend(units);
+        atual.cancelado += cancelado;
 
-        const { newBar, overflow } = applyPower(pontos, atual.bar);
-        atual.bar = newBar;
-
-        if (overflow > 0) {
-          const dano = overflow * escalation(t);
-          alvo.bar = Math.min(BAR_MAX * 1.5, alvo.bar + dano);
-          atual.danoEnviado += dano;
-          if (alvo.bar >= BAR_MAX) alvo.vivo = false;
+        if (sobra > 0) {
+          const enviado = escalateUnits(sobra, t);
+          atual.enviado += enviado;
+          alvo.pressure.queueAttack(enviado, atual.nome, t);
         }
       }
     }
@@ -111,39 +126,48 @@ function simularPartida(configA, configB, seed) {
   return { vencedor, duracao: t, a, b };
 }
 
-function percentil(valores, p) {
+const percentil = (valores, p) => {
   const ordenado = [...valores].sort((x, y) => x - y);
   return ordenado[Math.floor((ordenado.length - 1) * p)];
-}
+};
+const media = (valores) => valores.reduce((s, v) => s + v, 0) / (valores.length || 1);
 
-function rodar(rotulo, configA, configB, partidas = 400) {
+function rodar(rotulo, configA, configB, partidas = 300) {
   const duracoes = [];
+  const enviados = [];
+  const cancelados = [];
   let vitoriasA = 0;
   let empates = 0;
-  const jogadasA = [];
 
   for (let i = 0; i < partidas; i++) {
     const { vencedor, duracao, a } = simularPartida(configA, configB, (i * 2654435761) >>> 0);
     duracoes.push(duracao);
-    jogadasA.push(a.jogadas);
+    enviados.push(a.enviado);
+    cancelados.push(a.cancelado);
     if (vencedor === 'a') vitoriasA += 1;
     if (vencedor === 'empate') empates += 1;
   }
 
   const seg = (ms) => (ms / 1000).toFixed(0) + 's';
-  const taxa = ((vitoriasA / partidas) * 100).toFixed(0);
+  const enviadoMedio = media(enviados);
+  const canceladoMedio = media(cancelados);
+  // Quanto do ataque recebido foi anulado antes de virar dano. E a metrica que
+  // diz se o cancelamento e uma mecanica de verdade ou so enfeite.
+  const taxaCancel = enviadoMedio + canceladoMedio > 0
+    ? (canceladoMedio / (canceladoMedio + enviadoMedio)) * 100
+    : 0;
 
   console.log(
-    `  ${rotulo.padEnd(26)} ` +
-      `vitoria ${String(taxa).padStart(3)}%  ` +
+    `  ${rotulo.padEnd(24)} ` +
+      `vit ${String(((vitoriasA / partidas) * 100).toFixed(0)).padStart(3)}%  ` +
       `mediana ${seg(percentil(duracoes, 0.5)).padStart(5)}  ` +
-      `p10 ${seg(percentil(duracoes, 0.1)).padStart(5)}  ` +
-      `p90 ${seg(percentil(duracoes, 0.9)).padStart(5)}` +
-      (empates ? `  arrastadas ${empates}` : '')
+      `p90 ${seg(percentil(duracoes, 0.9)).padStart(5)}  ` +
+      `enviou ${enviadoMedio.toFixed(0).padStart(3)}u  ` +
+      `cancelou ${taxaCancel.toFixed(0).padStart(2)}%` +
+      (empates ? `  ARRASTADAS ${empates}` : '')
   );
 }
 
-// Perfis de jogador humano, do iniciante ao bom.
 const HUMANO = {
   iniciante: { nome: 'humano', thinkMs: 3600, skill: 0.25, isBot: false },
   casual: { nome: 'humano', thinkMs: 2400, skill: 0.5, isBot: false },
@@ -165,17 +189,18 @@ const BOT = Object.fromEntries(
   ])
 );
 
-console.log(`\n  Balanceamento — BAR_DIVISOR = ${BAR_DIVISOR}, barra = ${BAR_MAX}`);
+console.log(`\n  Pressao maxima ${PRESSURE_MAX}u · janela de pendencia ${PENDING_DELAY_MS}ms`);
 console.log(`  (taxa de vitoria e sempre do HUMANO)\n`);
 
 for (const [nomeHumano, humano] of Object.entries(HUMANO)) {
   console.log(`  Jogador ${nomeHumano}:`);
   for (const [nomeBot, bot] of Object.entries(BOT)) {
-    rodar(`  vs bot ${nomeBot}`, humano, bot);
+    rodar(`vs ${nomeBot}`, humano, bot);
   }
   console.log('');
 }
 
-console.log('  Espelho (mesmo perfil dos dois lados) — deve dar ~50%:');
-rodar('  casual vs casual', HUMANO.casual, { ...HUMANO.casual, nome: 'humano2' });
+console.log('  Espelho (deve dar ~50%):');
+rodar('casual vs casual', HUMANO.casual, { ...HUMANO.casual, nome: 'humano2' });
+rodar('bom vs bom', HUMANO.bom, { ...HUMANO.bom, nome: 'humano2' });
 console.log('');

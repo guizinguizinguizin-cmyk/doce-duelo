@@ -6,38 +6,56 @@
 // "um bot", "uma conexao" ou "eu mesmo" sem que o resto do jogo saiba a
 // diferenca.
 //
-// Autoridade: so o anfitriao decide dano e eliminacao. Convidado PEDE para
+// Autoridade: so o anfitriao decide ataque e eliminacao. Convidado PEDE para
 // atacar, nao ataca. Sem isso, dois clientes discordariam sobre quem morreu.
+//
+// Modelo de pressao (ver pressure.js): ataque nao entra na hora. Ele fica
+// pendente por alguns segundos, e uma jogada boa nesse intervalo CANCELA o
+// que estava chegando antes de virar dano. Toda a tensao do jogo mora nessa
+// janela.
 
 import { createBot } from './bot.js';
 import { NET_HOST_ID } from '../net/peer.js';
+import { createPressure } from './pressure.js';
+import { unitsForMove } from './attack.js';
 import {
-  BAR_MAX,
-  BAR_OVERFLOW_CAP,
+  PRESSURE_MAX,
   STREAK_TIMEOUT_MS,
   streakMultiplier,
-  applyPower,
-  escalation,
+  escalateUnits,
 } from './balance.js';
 
-export { BAR_MAX };
+export { PRESSURE_MAX };
+
+/** Frequencia com que a fila de pendentes e verificada. */
+const TICK_MS = 100;
 
 export function createSession(hooks = {}) {
   let net = null;
-  let bots = new Map();
+  const bots = new Map();
   let roster = [];
   let localId = NET_HOST_ID;
   let isHost = true;
   let solo = false;
   let active = false;
 
+  const pressure = createPressure();
   let localScore = 0;
-  let localBar = 0;
   let comboStreak = 0;
   let lastScoringMove = 0;
-  let bestCombo = 0;
-  let bestCascade = 0;
   let matchStartedAt = 0;
+  let tickTimer = null;
+
+  // Estatisticas da partida, para a tela de fim e para o perfil.
+  const stats = {
+    bestCombo: 0,
+    bestCascade: 0,
+    moves: 0,
+    unitsSent: 0,
+    unitsCancelled: 0,
+    unitsTaken: 0,
+    peakPressure: 0,
+  };
 
   const emit = (name, ...args) => {
     const fn = hooks[name];
@@ -45,12 +63,14 @@ export function createSession(hooks = {}) {
   };
 
   const findPlayer = (id) => roster.find((p) => p.id === id);
+  const elapsed = () => Date.now() - matchStartedAt;
 
   function syncLocalIntoRoster() {
     const me = findPlayer(localId);
     if (me) {
       me.score = localScore;
-      me.bar = Math.min(BAR_MAX, localBar);
+      me.pressure = pressure.current;
+      me.pending = pressure.pending;
     }
   }
 
@@ -63,6 +83,19 @@ export function createSession(hooks = {}) {
   // Montagem
   // ---------------------------------------------------------------------------
 
+  const novoJogador = (id, name, extra = {}) => ({
+    id,
+    name,
+    alive: true,
+    score: 0,
+    pressure: 0,
+    pending: 0,
+    boardTypes: null,
+    isBot: false,
+    isLocal: false,
+    ...extra,
+  });
+
   function setupSolo({ playerName, opponents = 1, difficulty = 'normal' }) {
     teardownBots();
     net = null;
@@ -70,7 +103,7 @@ export function createSession(hooks = {}) {
     isHost = true;
     localId = NET_HOST_ID;
 
-    roster = [{ id: localId, name: playerName, alive: true, score: 0, bar: 0, boardTypes: null, isBot: false, isLocal: true }];
+    roster = [novoJogador(localId, playerName, { isLocal: true })];
 
     for (let i = 0; i < opponents; i++) {
       const id = 'bot' + (i + 1);
@@ -80,20 +113,21 @@ export function createSession(hooks = {}) {
         difficulty,
         seed: (Date.now() + i * 7919) >>> 0,
         hooks: {
-          onState: ({ id: botId, score, bar, boardTypes }) => {
+          onState: ({ id: botId, score, pressure: press, pending, boardTypes }) => {
             const p = findPlayer(botId);
             if (!p) return;
             p.score = score;
-            p.bar = bar;
+            p.pressure = press;
+            p.pending = pending;
             p.boardTypes = boardTypes;
             notifyRoster();
           },
-          onAttack: (fromId, amount) => routeAttack(fromId, amount),
+          onAttack: (fromId, units) => routeAttack(fromId, units),
           onLose: (botId) => markLost(botId),
         },
       });
       bots.set(id, bot);
-      roster.push({ id, name: bot.name, alive: true, score: 0, bar: 0, boardTypes: null, isBot: true, isLocal: false });
+      roster.push(novoJogador(id, bot.name, { isBot: true }));
     }
 
     notifyRoster();
@@ -107,7 +141,7 @@ export function createSession(hooks = {}) {
 
     if (hostMode) {
       localId = NET_HOST_ID;
-      roster = [{ id: localId, name: playerName, alive: true, score: 0, bar: 0, boardTypes: null, isBot: false, isLocal: true }];
+      roster = [novoJogador(localId, playerName, { isLocal: true })];
       notifyRoster();
     } else {
       roster = [];
@@ -137,7 +171,7 @@ export function createSession(hooks = {}) {
   function addNetworkPlayer(id, metadata) {
     if (findPlayer(id)) return;
     const name = (metadata && metadata.name) || 'Jogador ' + id.slice(1);
-    roster.push({ id, name, alive: true, score: 0, bar: 0, boardTypes: null, isBot: false, isLocal: false });
+    roster.push(novoJogador(id, name));
 
     net.sendTo(id, { tipo: 'bemvindo', id, jogadores: rosterPayload() });
     net.broadcast({ tipo: 'roster', jogadores: rosterPayload() }, id);
@@ -160,64 +194,62 @@ export function createSession(hooks = {}) {
   }
 
   const rosterPayload = () =>
-    roster.map((p) => ({ id: p.id, name: p.name, alive: p.alive, score: p.score, bar: p.bar, isBot: p.isBot }));
+    roster.map((p) => ({
+      id: p.id,
+      name: p.name,
+      alive: p.alive,
+      score: p.score,
+      pressure: p.pressure,
+      pending: p.pending,
+      isBot: p.isBot,
+    }));
 
   // ---------------------------------------------------------------------------
-  // Ataques (autoridade do anfitriao)
+  // Ataque (autoridade do anfitriao)
   // ---------------------------------------------------------------------------
 
-  /** Escolhe um alvo vivo e entrega o dano. So o anfitriao chama isso. */
-  function routeAttack(fromId, rawAmount) {
-    if (!active || !isHost) return;
+  /** Escolhe um alvo vivo e envia unidades. So o anfitriao chama isso. */
+  function routeAttack(fromId, rawUnits) {
+    if (!active || !isHost || rawUnits <= 0) return;
     const candidates = roster.filter((p) => p.alive && p.id !== fromId);
     if (!candidates.length) return;
 
-    // Escalada: depois de 75s o dano cresce, para nenhuma partida se arrastar.
-    // Aplicada aqui, no unico ponto por onde TODO ataque passa — jogador, bot
-    // e rede — para nao existir caminho que escape dela.
-    const amount = rawAmount * escalation(Date.now() - matchStartedAt);
+    // Escalada depois de 75s, para nenhuma partida se arrastar. Aplicada aqui,
+    // no unico ponto por onde TODO ataque passa, para nao existir caminho que
+    // escape dela.
+    const units = escalateUnits(rawUnits, elapsed());
 
-    // Alvo preferencial: quem esta com a barra mais cheia (mais perto de
-    // perder). Da uma leitura tatica ao jogo em vez de sortear no escuro.
-    candidates.sort((a, b) => b.bar - a.bar);
-    const top = candidates.filter((p) => p.bar >= candidates[0].bar - 12);
-    const target = top[Math.floor(Math.random() * top.length)];
+    // Alvo preferencial: quem esta mais perto do colapso, contando o que ja
+    // esta a caminho. Da leitura tatica em vez de sorteio no escuro.
+    candidates.sort((a, b) => b.pressure + b.pending - (a.pressure + a.pending));
+    const lider = candidates[0];
+    const empatados = candidates.filter((p) => p.pressure + p.pending >= lider.pressure + lider.pending - 2);
+    const target = empatados[Math.floor(Math.random() * empatados.length)];
 
-    emit('onAttackSent', fromId, target.id, amount);
-    deliverDamage(target.id, amount, fromId);
+    emit('onAttackSent', fromId, target.id, units);
+    deliverAttack(target.id, units, fromId);
   }
 
-  function deliverDamage(targetId, amount, fromId) {
+  function deliverAttack(targetId, units, fromId) {
     const target = findPlayer(targetId);
     if (!target || !target.alive) return;
 
     if (targetId === localId) {
-      applyLocalDamage(amount, fromId);
+      pressure.queueAttack(units, fromId);
+      syncLocalIntoRoster();
+      emit('onPendingChange', pressure.pending, pressure.current, pressure.alert);
+      emit('onIncoming', units, fromId);
+      broadcastLocalState();
       return;
     }
 
     const bot = bots.get(targetId);
     if (bot) {
-      bot.takeDamage(amount);
+      bot.receiveAttack(units, fromId);
       return;
     }
 
-    if (net) net.sendTo(targetId, { tipo: 'ataque', quantidade: amount, de: fromId });
-  }
-
-  function applyLocalDamage(amount, fromId) {
-    localBar = Math.min(BAR_OVERFLOW_CAP, localBar + amount);
-    syncLocalIntoRoster();
-    emit('onLocalDamage', amount, fromId, localBar);
-    broadcastLocalState();
-
-    if (localBar >= BAR_MAX) {
-      if (isHost) markLost(localId);
-      else {
-        net.sendToHost({ tipo: 'perdi' });
-        emit('onLocalEliminated');
-      }
-    }
+    if (net) net.sendTo(targetId, { tipo: 'ataque', unidades: units, de: fromId });
   }
 
   function markLost(id) {
@@ -235,62 +267,87 @@ export function createSession(hooks = {}) {
     notifyRoster();
 
     const vivos = roster.filter((p) => p.alive);
-    if (vivos.length <= 1) {
-      const vencedor = vivos[0] || null;
-      finish(vencedor ? vencedor.id : null);
-    }
+    if (vivos.length <= 1) finish(vivos[0] ? vivos[0].id : null);
   }
 
   function finish(winnerId) {
     if (!active) return;
     active = false;
+    stopTicking();
     teardownBots();
     if (net && isHost) net.broadcast({ tipo: 'fim', vencedorId: winnerId });
-    emit('onGameEnd', winnerId, {
+    emit('onGameEnd', winnerId, resumo(winnerId));
+  }
+
+  function resumo(winnerId) {
+    const duracao = Math.max(1, elapsed());
+    return {
       score: localScore,
-      bestCombo,
-      bestCascade,
+      bestCombo: stats.bestCombo,
+      bestCascade: stats.bestCascade,
+      moves: stats.moves,
+      unitsSent: stats.unitsSent,
+      unitsCancelled: stats.unitsCancelled,
+      unitsTaken: stats.unitsTaken,
+      peakPressure: stats.peakPressure,
+      durationMs: duracao,
+      // Ataques por minuto: a metrica que mede o quanto voce pressionou.
+      apm: Math.round((stats.unitsSent / duracao) * 60000),
       solo,
       won: winnerId === localId,
-    });
+    };
   }
 
   // ---------------------------------------------------------------------------
-  // Pontuacao do jogador local
+  // Jogada do jogador local
   // ---------------------------------------------------------------------------
 
   /**
    * Chamado quando o jogador local resolve uma jogada.
-   * Devolve os pontos finais (ja com multiplicador de sequencia) para a UI
-   * mostrar no popup.
+   * Devolve o detalhamento para a UI mostrar ("+3", "cancelou 2", etc).
    */
-  function reportLocalPoints(rawPoints, cascades = 1) {
-    if (!active || rawPoints <= 0) return 0;
+  function reportLocalMove(result) {
+    if (!active || !result || !result.ok) return null;
 
     const now = Date.now();
     if (now - lastScoringMove > STREAK_TIMEOUT_MS) comboStreak = 0;
     comboStreak += 1;
     lastScoringMove = now;
-    if (comboStreak > bestCombo) bestCombo = comboStreak;
-    if (cascades > bestCascade) bestCascade = cascades;
+    stats.moves += 1;
+    if (comboStreak > stats.bestCombo) stats.bestCombo = comboStreak;
+    if (result.cascades > stats.bestCascade) stats.bestCascade = result.cascades;
 
-    const multiplier = streakMultiplier(comboStreak);
-    const points = Math.round(rawPoints * multiplier);
+    // Pontuacao e so placar/recorde. Quem decide a partida e a unidade de
+    // ataque, que tem tabela propria em attack.js.
+    const points = Math.round(result.points * streakMultiplier(comboStreak));
     localScore += points;
 
-    const { newBar, overflow } = applyPower(points, localBar);
-    localBar = newBar;
+    const units = unitsForMove(result, comboStreak);
+    // Cancelar vem antes de atacar: o que esta caindo na sua cabeca e mais
+    // urgente do que o que voce pode fazer na cabeca alheia.
+    const { sobra, cancelado } = pressure.spend(units);
+    stats.unitsCancelled += cancelado;
 
     syncLocalIntoRoster();
     broadcastLocalState();
-    emit('onLocalScore', points, localScore, comboStreak, multiplier);
+    emit('onLocalMove', {
+      points,
+      totalScore: localScore,
+      units,
+      cancelled: cancelado,
+      sent: sobra,
+      combo: comboStreak,
+      cascades: result.cascades,
+      alert: pressure.alert,
+    });
 
-    if (overflow > 0) {
-      if (isHost) routeAttack(localId, overflow);
-      else net.sendToHost({ tipo: 'pedidoAtaque', quantidade: overflow });
+    if (sobra > 0) {
+      stats.unitsSent += sobra;
+      if (isHost) routeAttack(localId, sobra);
+      else net.sendToHost({ tipo: 'pedidoAtaque', unidades: sobra });
     }
 
-    return points;
+    return { points, units, cancelled: cancelado, sent: sobra };
   }
 
   function broadcastLocalState() {
@@ -298,7 +355,8 @@ export function createSession(hooks = {}) {
       tipo: 'estado',
       id: localId,
       score: localScore,
-      bar: Math.min(BAR_MAX, localBar),
+      pressure: pressure.current,
+      pending: pressure.pending,
       boardTypes: hooks.getLocalBoardTypes ? hooks.getLocalBoardTypes() : null,
     };
 
@@ -314,6 +372,58 @@ export function createSession(hooks = {}) {
       net.sendToHost(payload);
     }
     notifyRoster();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Relogio: converte pendente em pressao real
+  // ---------------------------------------------------------------------------
+
+  function tick() {
+    if (!active) return;
+    const now = Date.now();
+
+    const entrou = pressure.tick(now);
+    if (entrou > 0) {
+      stats.unitsTaken += entrou;
+      if (pressure.current > stats.peakPressure) stats.peakPressure = pressure.current;
+      syncLocalIntoRoster();
+      emit('onPressureLanded', entrou, pressure.current, pressure.alert);
+      broadcastLocalState();
+
+      if (pressure.dead) {
+        if (isHost) markLost(localId);
+        else {
+          net.sendToHost({ tipo: 'perdi' });
+          emit('onLocalEliminated');
+        }
+        return;
+      }
+    }
+
+    for (const bot of bots.values()) bot.tick(now);
+
+    if (comboStreak > 0 && now - lastScoringMove > STREAK_TIMEOUT_MS) {
+      comboStreak = 0;
+      emit('onComboReset');
+    }
+
+    emit('onTick', {
+      pressure: pressure.current,
+      pending: pressure.pending,
+      alert: pressure.alert,
+      ratio: pressure.ratio,
+      pendingRatio: pressure.pendingRatio,
+    });
+  }
+
+  function startTicking() {
+    stopTicking();
+    tickTimer = setInterval(tick, TICK_MS);
+  }
+
+  function stopTicking() {
+    if (tickTimer) clearInterval(tickTimer);
+    tickTimer = null;
   }
 
   // ---------------------------------------------------------------------------
@@ -344,7 +454,15 @@ export function createSession(hooks = {}) {
         break;
 
       case 'iniciar':
-        roster = msg.jogadores.map((p) => ({ ...p, isLocal: p.id === localId, alive: true, score: 0, bar: 0, boardTypes: null }));
+        roster = msg.jogadores.map((p) => ({
+          ...p,
+          isLocal: p.id === localId,
+          alive: true,
+          score: 0,
+          pressure: 0,
+          pending: 0,
+          boardTypes: null,
+        }));
         beginLocal();
         emit('onStart', msg.semente);
         break;
@@ -353,7 +471,8 @@ export function createSession(hooks = {}) {
         const p = findPlayer(msg.id);
         if (p) {
           p.score = msg.score;
-          p.bar = msg.bar;
+          p.pressure = msg.pressure;
+          p.pending = msg.pending;
           p.boardTypes = msg.boardTypes;
         }
         // O anfitriao e o unico que ve todo mundo, entao ele repassa.
@@ -363,11 +482,17 @@ export function createSession(hooks = {}) {
       }
 
       case 'pedidoAtaque':
-        if (isHost) routeAttack(fromId, msg.quantidade);
+        if (isHost) routeAttack(fromId, msg.unidades);
         break;
 
       case 'ataque':
-        if (active) applyLocalDamage(msg.quantidade, msg.de);
+        if (active) {
+          pressure.queueAttack(msg.unidades, msg.de);
+          syncLocalIntoRoster();
+          emit('onPendingChange', pressure.pending, pressure.current, pressure.alert);
+          emit('onIncoming', msg.unidades, msg.de);
+          broadcastLocalState();
+        }
         break;
 
       case 'perdi':
@@ -384,13 +509,8 @@ export function createSession(hooks = {}) {
 
       case 'fim':
         active = false;
-        emit('onGameEnd', msg.vencedorId, {
-          score: localScore,
-          bestCombo,
-          bestCascade,
-          solo: false,
-          won: msg.vencedorId === localId,
-        });
+        stopTicking();
+        emit('onGameEnd', msg.vencedorId, resumo(msg.vencedorId));
         break;
     }
   }
@@ -401,20 +521,30 @@ export function createSession(hooks = {}) {
 
   function beginLocal() {
     active = true;
+    pressure.reset();
     localScore = 0;
-    localBar = 0;
     comboStreak = 0;
-    bestCombo = 0;
-    bestCascade = 0;
     lastScoringMove = 0;
     matchStartedAt = Date.now();
+    Object.assign(stats, {
+      bestCombo: 0,
+      bestCascade: 0,
+      moves: 0,
+      unitsSent: 0,
+      unitsCancelled: 0,
+      unitsTaken: 0,
+      peakPressure: 0,
+    });
+
     for (const p of roster) {
       p.alive = true;
       p.score = 0;
-      p.bar = 0;
+      p.pressure = 0;
+      p.pending = 0;
       p.boardTypes = null;
     }
     notifyRoster();
+    startTicking();
   }
 
   /** So o anfitriao (ou o solo) inicia. */
@@ -430,21 +560,14 @@ export function createSession(hooks = {}) {
 
   /** Chamado quando a contagem regressiva acaba e o tabuleiro fica jogavel. */
   function launchBots() {
+    matchStartedAt = Date.now();
     for (const bot of bots.values()) bot.start();
   }
 
   function abandon() {
     active = false;
+    stopTicking();
     teardownBots();
-  }
-
-  function decayCombo() {
-    if (comboStreak > 0 && Date.now() - lastScoringMove > STREAK_TIMEOUT_MS) {
-      comboStreak = 0;
-      emit('onComboReset');
-      return true;
-    }
-    return false;
   }
 
   return {
@@ -453,12 +576,11 @@ export function createSession(hooks = {}) {
     addNetworkPlayer,
     removeNetworkPlayer,
     handleMessage,
-    reportLocalPoints,
+    reportLocalMove,
     broadcastLocalState,
     start,
     launchBots,
     abandon,
-    decayCombo,
     finish,
 
     get roster() {
@@ -479,14 +601,23 @@ export function createSession(hooks = {}) {
     get localScore() {
       return localScore;
     },
-    get localBar() {
-      return localBar;
+    get pressure() {
+      return pressure.current;
+    },
+    get pending() {
+      return pressure.pending;
+    },
+    get alert() {
+      return pressure.alert;
+    },
+    get pressureRatio() {
+      return pressure.ratio;
+    },
+    get pendingRatio() {
+      return pressure.pendingRatio;
     },
     get comboStreak() {
       return comboStreak;
-    },
-    get playerCount() {
-      return roster.length;
     },
     get aliveCount() {
       return roster.filter((p) => p.alive).length;

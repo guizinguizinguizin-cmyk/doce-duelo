@@ -89,6 +89,9 @@ const el = {
   resultStats: $('resultStats'),
   recordBanner: $('recordBanner'),
   btnRematch: $('btnRematch'),
+  btnReplay: $('btnReplay'),
+  debugPanel: $('debugPanel'),
+  debugToggle: $('debugToggle'),
   gameOverCard: $('gameOverCard'),
 
   statsGrid: $('statsGrid'),
@@ -164,6 +167,7 @@ function applySettings() {
   el.sfxValue.textContent = Math.round(s.sfx * 100) + '%';
   el.reducedMotionToggle.checked = prefersReducedMotion();
   el.hintsToggle.checked = s.hints;
+  if (s.debug !== debugLigado) setDebug(!!s.debug);
   el.btnHint.classList.toggle('hidden', !s.hints);
 
   el.soundIcon.textContent = s.muted ? '🔇' : '🔊';
@@ -331,6 +335,39 @@ function updateScoreUI(bump) {
   }
 }
 
+let debugLigado = false;
+let ultimaSemente = 0;
+
+/**
+ * Painel tecnico. Existe para depurar de verdade: sem os numeros na tela,
+ * investigar um desequilibrio vira adivinhacao ("achei que o combo estava
+ * alto"). Mostra o que a partida sabe, nao o que ela aparenta.
+ */
+function updateDebugPanel() {
+  if (!debugLigado || !session) return;
+  const linhas = [
+    `semente   ${ultimaSemente}`,
+    `pressao   ${session.pressure} / ${PRESSURE_MAX}`,
+    `pendente  +${session.pending}`,
+    `projetado ${session.pressure + session.pending}`,
+    `alerta    ${session.alert}`,
+    `combo     x${session.comboStreak}`,
+    `placar    ${session.localScore}`,
+    `vivos     ${session.aliveCount}`,
+  ];
+  el.debugPanel.innerHTML = linhas
+    .map((l) => (l.includes('alerta') && session.alert !== 'normal' ? `<b class="alerta">${l}</b>` : l))
+    .join('\n');
+}
+
+function setDebug(ligado) {
+  debugLigado = !!ligado;
+  el.debugPanel.classList.toggle('hidden', !debugLigado);
+  el.debugPanel.setAttribute('aria-hidden', String(!debugLigado));
+  if (el.debugToggle) el.debugToggle.checked = debugLigado;
+  storage.updateSettings({ debug: debugLigado });
+}
+
 function updateComboUI() {
   const streak = session.comboStreak;
   if (streak >= 2) {
@@ -400,7 +437,7 @@ async function attemptMove(a, b) {
   await renderer.animateSwap(a, b);
   await playPhases(result.phases);
 
-  const info = session.reportLocalMove(result);
+  const info = session.reportLocalMove(result, a, b);
   if (info) {
     if (info.points > 0) {
       renderer.floatText(`+${info.points}`, b, '#ffe27a', result.cascades >= 3);
@@ -547,7 +584,10 @@ function createSessionWithHooks() {
       renderer.floatText(`-${units}`, idx(0, 4), '#ff8a8a', true);
     },
 
-    onTick: () => updatePressureUI(),
+    onTick: () => {
+      updatePressureUI();
+      updateDebugPanel();
+    },
 
     onAttackSent: (fromId, targetId) => {
       if (fromId === session.localId) strikeOpponent(targetId);
@@ -607,6 +647,7 @@ function startCountdown(semente) {
 }
 
 function beginBattle(semente) {
+  ultimaSemente = semente >>> 0;
   // createMatchRandom da um gerador por COLUNA a partir da semente da partida.
   // E o que garante que os dois jogadores recebam a mesma sequencia de doces
   // em cada coluna, independentemente de quem cascateou mais. Ver rng.js.
@@ -695,6 +736,17 @@ function finishMatch(winnerId, summary) {
     el.recordBanner.classList.remove('hidden');
   } else {
     el.recordBanner.classList.add('hidden');
+  }
+
+  // Replay: so existe no solo (ver session.js — o anfitriao nao recebe as
+  // jogadas do convidado, entao um replay online seria incompleto).
+  const replay = session.replayDaPartida ? session.replayDaPartida() : null;
+  replayPendente = replay && replay.veredito.valido ? replay.dados : null;
+  el.btnReplay.classList.toggle('hidden', !replayPendente);
+  if (replay && !replay.veredito.valido) {
+    // Nao oferecer um replay que nao se reproduz: melhor nao ter do que
+    // entregar um arquivo que mostra outra partida.
+    console.warn('replay descartado:', replay.veredito.motivo);
   }
 
   // Revanche: no solo sempre; no online, so quem e anfitriao pode reiniciar.
@@ -1076,6 +1128,20 @@ el.btnHint.addEventListener('click', () => {
   showHint();
 });
 
+let replayPendente = null;
+
+el.btnReplay.addEventListener('click', async () => {
+  if (!replayPendente) return;
+  audio.play('tap');
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(replayPendente));
+    el.btnReplay.textContent = '✅ Replay copiado!';
+  } catch {
+    el.btnReplay.textContent = '⚠️ Não consegui copiar';
+  }
+  setTimeout(() => (el.btnReplay.textContent = '💾 Copiar replay desta partida'), 2200);
+});
+
 el.btnRematch.addEventListener('click', () => {
   audio.play('tap');
   if (lastMode === 'solo') startSolo();
@@ -1118,6 +1184,17 @@ el.sfxSlider.addEventListener('change', () => audio.play('match', 2, 3));
 el.reducedMotionToggle.addEventListener('change', () => {
   storage.updateSettings({ reducedMotion: el.reducedMotionToggle.checked });
   renderer.setReducedMotion(el.reducedMotionToggle.checked);
+});
+
+if (el.debugToggle) {
+  el.debugToggle.addEventListener('change', () => setDebug(el.debugToggle.checked));
+}
+
+// Tecla D alterna o painel tecnico durante a partida.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'd' && e.key !== 'D') return;
+  if (e.target && /input|textarea/i.test(e.target.tagName)) return;
+  setDebug(!debugLigado);
 });
 
 el.hintsToggle.addEventListener('change', () => {

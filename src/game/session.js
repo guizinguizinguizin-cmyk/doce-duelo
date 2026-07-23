@@ -17,6 +17,7 @@
 import { createBot } from './bot.js';
 import { NET_HOST_ID } from '../net/peer.js';
 import { createRng } from '../core/rng.js';
+import { createRecorder, verificar } from './replay.js';
 import { createPressure } from './pressure.js';
 import { unitsForMove } from './attack.js';
 import {
@@ -47,6 +48,7 @@ export function createSession(hooks = {}) {
   let matchStartedAt = 0;
   let tickTimer = null;
   let matchSeed = 0;
+  let recorder = null;
   // Gerador dedicado as DECISOES do duelo (desempate de alvo). Semeado a partir
   // da semente da partida, para o replay reproduzir as mesmas escolhas.
   let duelRng = createRng(0);
@@ -126,6 +128,9 @@ export function createSession(hooks = {}) {
             p.pending = pending;
             p.boardTypes = boardTypes;
             notifyRoster();
+          },
+          onMove: (botId, a, b, t) => {
+            if (recorder) recorder.registrarJogada(botId, a, b, t);
           },
           onAttack: (fromId, units) => routeAttack(fromId, units),
           onLose: (botId) => markLost(botId),
@@ -261,6 +266,13 @@ export function createSession(hooks = {}) {
     if (net) net.sendTo(targetId, { tipo: 'ataque', unidades: units, de: fromId });
   }
 
+  /** O jogador caiu por pressao propria, ou por algo externo ao jogo? */
+  function pressureCollapsed(id) {
+    if (id === localId) return pressure.dead;
+    const bot = bots.get(id);
+    return bot ? bot.pressure >= PRESSURE_MAX : false;
+  }
+
   function markLost(id) {
     if (!isHost) return;
     const player = findPlayer(id);
@@ -269,6 +281,9 @@ export function createSession(hooks = {}) {
     player.alive = false;
     const bot = bots.get(id);
     if (bot) bot.stop();
+    // Colapso por pressao e derivavel na reexecucao; saida por fora do jogo
+    // (desconexao, desistencia) nao e, entao precisa ser gravada.
+    if (recorder && !pressureCollapsed(id)) recorder.registrarSaida(id, Date.now(), 'saiu');
 
     if (net) net.broadcast({ tipo: 'perdeu', id });
     emit('onPlayerEliminated', id);
@@ -282,6 +297,7 @@ export function createSession(hooks = {}) {
   function finish(winnerId) {
     if (!active) return;
     active = false;
+    if (recorder) recorder.finalizar(winnerId, Date.now());
     stopTicking();
     teardownBots();
     if (net && isHost) net.broadcast({ tipo: 'fim', vencedorId: winnerId });
@@ -315,10 +331,11 @@ export function createSession(hooks = {}) {
    * Chamado quando o jogador local resolve uma jogada.
    * Devolve o detalhamento para a UI mostrar ("+3", "cancelou 2", etc).
    */
-  function reportLocalMove(result) {
+  function reportLocalMove(result, a, b) {
     if (!active || !result || !result.ok) return null;
 
     const now = Date.now();
+    if (recorder && a !== undefined) recorder.registrarJogada(localId, a, b, now);
     if (now - lastScoringMove > STREAK_TIMEOUT_MS) comboStreak = 0;
     comboStreak += 1;
     lastScoringMove = now;
@@ -535,6 +552,17 @@ export function createSession(hooks = {}) {
     // Os bots jogam no MESMO tabuleiro que o jogador recebeu.
     for (const bot of bots.values()) bot.reset(matchSeed);
 
+    // So o modo solo e gravavel: no online o anfitriao nao recebe as JOGADAS
+    // do convidado (so os pedidos de ataque), entao nao teria como reconstruir
+    // o tabuleiro dele. Gravar pela metade daria um replay que mente.
+    recorder = solo
+      ? createRecorder({
+          seed: matchSeed,
+          players: roster.map((p) => ({ id: p.id, name: p.name, isBot: p.isBot })),
+          startedAt: Date.now(),
+        })
+      : null;
+
     active = true;
     pressure.reset();
     localScore = 0;
@@ -593,6 +621,13 @@ export function createSession(hooks = {}) {
     handleMessage,
     reportLocalMove,
     broadcastLocalState,
+
+    /** Replay da ultima partida solo, ou null. Ja vem conferido. */
+    replayDaPartida() {
+      if (!recorder) return null;
+      const dados = recorder.toJSON();
+      return { dados, veredito: verificar(dados) };
+    },
     start,
     launchBots,
     abandon,

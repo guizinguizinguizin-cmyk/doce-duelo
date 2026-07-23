@@ -72,6 +72,9 @@ try {
     if (msg.type() === 'error') errosConsole.push(msg.text());
   });
   pagina.on('pageerror', (err) => errosConsole.push('pageerror: ' + err.message));
+  // O jogo usa confirm() para sair da partida; o Playwright cancela dialogos
+  // por padrao, o que travaria o teste no meio.
+  pagina.on('dialog', (d) => d.accept());
 
   await pagina.goto(BASE, { waitUntil: 'networkidle' });
   ok('pagina carregou');
@@ -212,6 +215,50 @@ try {
     await sleep(120);
   }
   ok('sobreviveu a 14 toques aleatorios');
+
+  // ---- painel tecnico ----
+  await pagina.keyboard.press('d');
+  await sleep(400);
+  const painel = await pagina.locator('#debugPanel:not(.hidden)').count();
+  if (painel) {
+    const texto = await pagina.locator('#debugPanel').innerText();
+    if (/semente\s+\d+/.test(texto) && /pressao/.test(texto)) {
+      ok('painel tecnico mostra semente e pressao');
+    } else {
+      falhar(`painel tecnico com conteudo inesperado: ${texto.slice(0, 60)}`);
+    }
+  } else {
+    falhar('a tecla D nao abriu o painel tecnico');
+  }
+  await pagina.keyboard.press('d');
+
+  // ---- gravacao de replay ate o fim da partida ----
+  // Joga mal de proposito contra o bot mais forte para a partida terminar
+  // rapido, e confere que o replay foi gravado E se reproduz. Os testes de
+  // unidade provam o motor; este prova a LIGACAO com o jogo real.
+  await pagina.locator('#btnQuit').click();
+  await pagina.locator('#btnPlaySolo').click();
+  await pagina.locator('#difficultySelect .option-btn:last-child').click();
+  await pagina.locator('#btnStartSolo').click();
+  await pagina.waitForSelector('#screenBattle:not(.hidden)', { timeout: 12000 });
+
+  const fim = await pagina
+    .waitForSelector('#screenGameOver:not(.hidden)', { timeout: 180000 })
+    .then(() => true, () => false);
+
+  if (fim) {
+    ok('partida solo chegou ao fim');
+    const temReplay = await pagina.locator('#btnReplay:not(.hidden)').count();
+    if (temReplay) {
+      ok('replay gravado e aprovado na propria verificacao');
+    } else {
+      falhar('o replay nao foi oferecido — ou nao gravou, ou nao se reproduz');
+    }
+  } else {
+    falhar('a partida nao terminou em 3 minutos');
+  }
+
+  await pagina.screenshot({ path: 'scripts/.saida/fim.png' });
 
   if (errosConsole.length) {
     falhar(`${errosConsole.length} erro(s) de console:`);

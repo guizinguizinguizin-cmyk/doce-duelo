@@ -145,6 +145,9 @@ export function createBot({ id, name, difficulty = 'normal', brainSeed, hooks = 
       const result = trySwap(grid, move.a, move.b, boardRng);
       if (result.ok && result.points > 0) {
         const now = Date.now();
+        // O gravador de replay precisa da jogada crua; sem as jogadas do bot
+        // a partida solo nao seria reexecutavel.
+        if (hooks.onMove) hooks.onMove(id, move.a, move.b, now);
         if (now - lastMoveAt > STREAK_TIMEOUT_MS) comboStreak = 0;
         comboStreak += 1;
         lastMoveAt = now;

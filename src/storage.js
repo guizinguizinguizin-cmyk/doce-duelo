@@ -24,6 +24,7 @@ const DEFAULTS = {
     sfx: 0.7,
     reducedMotion: null, // null = seguir a preferencia do sistema
     hints: true,
+    debug: false,
   },
   tutorialSeen: false,
 };

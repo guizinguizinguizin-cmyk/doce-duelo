@@ -31,6 +31,11 @@ const ASSETS = [
   './src/audio/audio.js',
   './src/game/session.js',
   './src/game/bot.js',
+  './src/game/balance.js',
+  './src/game/pressure.js',
+  './src/game/attack.js',
+  './src/game/match.js',
+  './src/game/replay.js',
   './src/net/peer.js',
 ];
 

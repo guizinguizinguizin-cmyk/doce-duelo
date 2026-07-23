@@ -1045,3 +1045,29 @@ input[type='checkbox'] {
   .brand h1 { font-size: 1.5rem; }
   .hero-gem { width: 36px; height: 36px; }
 }
+
+/* ------------------------------------------------------- painel tecnico */
+
+/* Mostra o estado interno da partida (semente, pressao, combo, APM).
+   Existe para depurar de verdade: sem numero na tela, investigar um bug de
+   balanceamento vira adivinhacao. Alterna com a tecla D. */
+.debug-panel {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 80;
+  background: rgba(6, 2, 16, 0.92);
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  padding: 9px 11px;
+  font-family: 'Consolas', ui-monospace, monospace;
+  font-size: 0.68rem;
+  line-height: 1.55;
+  color: var(--text-dim);
+  pointer-events: none;
+  max-width: 60vw;
+  white-space: pre;
+}
+
+.debug-panel b { color: var(--cyan); font-weight: 700; }
+.debug-panel .alerta { color: var(--danger); }

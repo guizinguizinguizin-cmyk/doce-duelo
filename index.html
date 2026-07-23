@@ -199,6 +199,7 @@
       <div class="result-stats" id="resultStats"></div>
       <div class="record-banner hidden" id="recordBanner"></div>
 
+      <button id="btnReplay" class="mini-btn wide hidden">💾 Copiar replay desta partida</button>
       <button id="btnRematch" class="big-btn primary hidden">Jogar de novo</button>
       <button id="btnBackLobby" class="big-btn">Voltar ao menu</button>
     </div>
@@ -211,6 +212,9 @@
 </footer>
 
 <!-- ================= MODAIS ================= -->
+
+<!-- Painel de depuração: alterna com a tecla D durante a partida. -->
+<div id="debugPanel" class="debug-panel hidden" aria-hidden="true"></div>
 
 <div id="aboutModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
   <div class="modal-card">
@@ -246,6 +250,11 @@
     <label class="toggle-row">
       <span>Botão de dica<small>Mostra uma jogada possível na partida</small></span>
       <input type="checkbox" id="hintsToggle" checked>
+    </label>
+
+    <label class="toggle-row">
+      <span>Painel técnico<small>Semente, pressão, combo, APM. Tecla D na partida</small></span>
+      <input type="checkbox" id="debugToggle">
     </label>
 
     <button class="close-btn" data-close-modal>Fechar</button>

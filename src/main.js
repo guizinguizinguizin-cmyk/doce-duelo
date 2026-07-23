@@ -363,6 +363,11 @@ function updateDebugPanel() {
     `alerta    ${session.alert}`,
     `combo     x${session.comboStreak}`,
     `lixo      ${grid.filter(isBlocked).length}`,
+    `espelho   ${(() => {
+      const e = renderer.conferirEspelho();
+      if (e.animando) return 'animando';
+      return e.ok ? 'ok' : `${e.problemas.length} ERROS`;
+    })()}`,
     `placar    ${session.localScore}`,
     `vivos     ${session.aliveCount}`,
   ];

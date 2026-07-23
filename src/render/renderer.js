@@ -405,19 +405,29 @@ export function createRenderer(canvas, options = {}) {
   /** Troca invalida: vai e volta, com um tranco no fim. */
   async function animateSwapRevert(a, b) {
     await animateSwap(a, b);
-    const sa = cellSprites[a];
-    const sb = cellSprites[b];
+
+    // Depois de animateSwap o espelho JA ESTA trocado: quem ocupa `a` e a peca
+    // que comecou em `b`. Os nomes abaixo dizem a origem, nao a casa atual —
+    // a versao anterior chamava estas variaveis de `sa` e `sb`, o que sugeria
+    // o contrario, e por isso as posicoes finais acabaram invertidas.
+    const veioDeB = cellSprites[a];
+    const veioDeA = cellSprites[b];
+
     await runTweens([
-      { target: sa, to: { col: colOf(b), row: rowOf(b) }, duration: scale(TIMING.swapBack), ease: easeInQuad },
-      { target: sb, to: { col: colOf(a), row: rowOf(a) }, duration: scale(TIMING.swapBack), ease: easeInQuad },
+      { target: veioDeB, to: { col: colOf(b), row: rowOf(b) }, duration: scale(TIMING.swapBack), ease: easeInQuad },
+      { target: veioDeA, to: { col: colOf(a), row: rowOf(a) }, duration: scale(TIMING.swapBack), ease: easeInQuad },
     ]);
-    // desfaz o espelho
-    cellSprites[a] = sb;
-    cellSprites[b] = sa;
-    sa.col = colOf(a);
-    sa.row = rowOf(a);
-    sb.col = colOf(b);
-    sb.row = rowOf(b);
+
+    // Cada peca volta para a casa de origem, no espelho E na posicao desenhada.
+    // As duas coisas TEM de concordar: se divergirem, a proxima cascata remove
+    // o sprite errado e o tabuleiro fica com buraco de um lado e peca
+    // sobreposta do outro.
+    cellSprites[a] = veioDeA;
+    cellSprites[b] = veioDeB;
+    veioDeA.col = colOf(a);
+    veioDeA.row = rowOf(a);
+    veioDeB.col = colOf(b);
+    veioDeB.row = rowOf(b);
   }
 
   function burstAt(index, type, special) {
@@ -761,6 +771,56 @@ export function createRenderer(canvas, options = {}) {
     reducedMotion = !!value;
   }
 
+  /**
+   * Confere se o espelho visual bate com o que esta desenhado.
+   *
+   * Existe por causa de um bug real: uma troca invalida devolvia as duas pecas
+   * para as casas TROCADAS na posicao desenhada, enquanto o espelho ficava
+   * certo. Nada quebrava na hora — mas na cascata seguinte o sprite errado era
+   * removido, e o tabuleiro ganhava um buraco de um lado e duas pecas
+   * empilhadas do outro. Era invisivel para os testes, que so olhavam o estado
+   * logico, e so apareceu numa foto de alguem jogando.
+   *
+   * So faz sentido com o tabuleiro parado: no meio de uma animacao as pecas
+   * estao legitimamente entre duas casas.
+   */
+  function conferirEspelho() {
+    const problemas = [];
+    if (tweens.length > 0) return { ok: true, animando: true, problemas };
+
+    const vistos = new Map();
+    for (let i = 0; i < CELL_COUNT; i++) {
+      const sprite = cellSprites[i];
+      if (!sprite) {
+        problemas.push(`casa ${i} vazia no espelho`);
+        continue;
+      }
+      if (vistos.has(sprite.id)) {
+        problemas.push(`sprite ${sprite.id} ocupa as casas ${vistos.get(sprite.id)} e ${i}`);
+      }
+      vistos.set(sprite.id, i);
+
+      if (!sprites.has(sprite.id)) {
+        problemas.push(`sprite ${sprite.id} na casa ${i} nao existe mais`);
+      }
+      if (Math.round(sprite.row) !== rowOf(i) || Math.round(sprite.col) !== colOf(i)) {
+        problemas.push(
+          `sprite da casa ${i} desenhado em (${Math.round(sprite.row)},${Math.round(sprite.col)})`
+        );
+      }
+    }
+
+    // Sprite visivel que nenhuma casa referencia: e o que aparece empilhado.
+    for (const sprite of sprites.values()) {
+      if (vistos.has(sprite.id)) continue;
+      if (sprite.alpha > 0.05 && sprite.scale > 0.05) {
+        problemas.push(`sprite ${sprite.id} desenhado sem casa`);
+      }
+    }
+
+    return { ok: problemas.length === 0, animando: false, problemas };
+  }
+
   resize();
 
   return {
@@ -780,6 +840,7 @@ export function createRenderer(canvas, options = {}) {
     setDanger,
     pointerToCell,
     setReducedMotion,
+    conferirEspelho,
     get cellSize() {
       return cellSize;
     },

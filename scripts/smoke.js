@@ -138,6 +138,46 @@ try {
 
   await pagina.screenshot({ path: 'scripts/.saida/tabuleiro.png' });
 
+  // ---- o espelho do renderer aguenta trocas invalidas? ----
+  //
+  // Bug real encontrado por uma FOTO de alguem jogando: cada troca invalida
+  // devolvia as duas pecas para as casas TROCADAS na posicao desenhada. O
+  // estado logico continuava perfeito — so o desenho divergia, ate uma cascata
+  // remover o sprite errado e abrir buracos no tabuleiro.
+  //
+  // A checagem tem de vir AGORA, no comeco da partida. Mais tarde o lixo cai,
+  // aplicarLixo() chama renderer.setGrid(), o espelho e reconstruido do zero e
+  // a evidencia some — foi assim que a primeira versao deste teste passou com
+  // o bug presente.
+  await pagina.keyboard.press('d');
+  const caixaCedo = await pagina.locator('#boardCanvas').boundingBox();
+  const celCedo = (caixaCedo.width - BOARD_PAD * 2 - CELL_GAP * (COLS - 1)) / COLS;
+  const passoCedo = celCedo + CELL_GAP;
+  const pontoCedo = (l, c) => ({
+    x: caixaCedo.x + BOARD_PAD + c * passoCedo + celCedo / 2,
+    y: caixaCedo.y + BOARD_PAD + l * passoCedo + celCedo / 2,
+  });
+
+  for (const [l, c] of [[0, 0], [7, 6], [3, 3], [5, 1], [1, 5], [6, 2], [2, 4], [4, 0]]) {
+    const de = pontoCedo(l, c);
+    const para = pontoCedo(l, c + 1);
+    await pagina.mouse.move(de.x, de.y);
+    await pagina.mouse.down();
+    await pagina.mouse.move(para.x, para.y, { steps: 5 });
+    await pagina.mouse.up();
+    await sleep(450);
+  }
+  await sleep(1200); // deixa terminar qualquer animacao
+
+  const textoEspelho = await pagina.locator('#debugPanel').innerText();
+  const linhaEspelho = /espelho\s+(.+)/.exec(textoEspelho);
+  if (linhaEspelho && /^ok/.test(linhaEspelho[1].trim())) {
+    ok('espelho do renderer bate com o tabuleiro apos 8 trocas');
+  } else {
+    falhar(`o desenho divergiu do tabuleiro: espelho ${linhaEspelho ? linhaEspelho[1].trim() : '?'}`);
+  }
+  await pagina.keyboard.press('d');
+
   // ---- procurar uma jogada valida ----
   const celula = (caixa.width - BOARD_PAD * 2 - CELL_GAP * (COLS - 1)) / COLS;
   const passo = celula + CELL_GAP;
@@ -227,6 +267,7 @@ try {
     } else {
       falhar(`painel tecnico com conteudo inesperado: ${texto.slice(0, 60)}`);
     }
+
   } else {
     falhar('a tecla D nao abriu o painel tecnico');
   }

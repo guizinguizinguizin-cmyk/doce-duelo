@@ -15,6 +15,7 @@
     "build": "node scripts/build.js"
   },
   "devDependencies": {
+    "cloudflared": "^0.7.1",
     "peer": "^1.0.2",
     "playwright": "^1.61.1"
   }

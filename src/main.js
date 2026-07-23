@@ -1713,6 +1713,14 @@ function saveName() {
   storage.setName(value);
   refreshMenuName();
   closeModal('nameModal');
+
+  // Atualiza o nome no ranking mundial NA HORA. Antes so ia junto no fim de uma
+  // partida, entao trocar o nick nao aparecia la ate jogar de novo.
+  if (leaderboardAtivo()) {
+    const st = storage.stats;
+    const nota = notaExibida(storage.rating);
+    enviarPontuacao({ name: value, rating: nota, rankId: rankDe(nota).id, wins: st.wins, games: st.games });
+  }
 }
 
 // ---------------------------------------------------------------------------

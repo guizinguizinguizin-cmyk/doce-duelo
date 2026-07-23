@@ -69,7 +69,13 @@ export function createRenderer(canvas, options = {}) {
   let lastFrame = 0;
   let running = false;
 
-  const scale = (ms) => (reducedMotion ? ms * 0.45 : ms);
+  // Duracao das animacoes de jogada. NAO depende de reducedMotion nem do modo
+  // leve, DE PROPOSITO: se dependesse, quem jogasse com menos animacao
+  // resolveria as jogadas mais rapido e atacaria mais por segundo — vantagem
+  // competitiva por configuracao, inaceitavel. O tempo de jogo e igual para
+  // todos; o modo leve corta so o VISUAL (particulas, tremor, fundo), nunca a
+  // velocidade. (Era `reducedMotion ? ms * 0.45 : ms` e dava vantagem.)
+  const scale = (ms) => ms;
 
   // ---------------------------------------------------------------------------
   // Layout

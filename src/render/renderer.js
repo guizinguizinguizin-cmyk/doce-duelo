@@ -330,8 +330,11 @@ export function createRenderer(canvas, options = {}) {
     // Cada numero sai numa direcao propria, num arco — nao mais todos subindo
     // reto na mesma coluna. Empilhados na vertical eles se sobrepoem e ficam
     // ilegiveis; espalhados, cada um respira.
-    const ang = -Math.PI / 2 + (Math.random() - 0.5) * 1.5; // pra cima, com desvio
-    const vel = 60 + Math.random() * 70;
+    // Leque diagonal: cada numero dispara numa direcao bem diferente (ate ~65
+    // graus para cada lado do topo), para varios '+N' nao se empilharem na
+    // mesma coluna e virarem uma coisa so.
+    const ang = -Math.PI / 2 + (Math.random() - 0.5) * 2.3;
+    const vel = 95 + Math.random() * 90;
     floatTexts.push({
       text,
       x: cellX(colOf(index)) + (Math.random() - 0.5) * cellSize,
@@ -353,8 +356,8 @@ export function createRenderer(canvas, options = {}) {
       ft.life -= dt;
       ft.x += ft.vx * dt;
       ft.y += ft.vy * dt;
-      ft.vy += 120 * dt; // gravidade leve: o numero sobe, desacelera e tomba
-      ft.vx *= 1 - 0.8 * dt;
+      ft.vy += 75 * dt; // gravidade leve
+      ft.vx *= 1 - 0.35 * dt; // segura a diagonal por mais tempo
       if (ft.life > 0) still.push(ft);
     }
     floatTexts = still;
@@ -403,7 +406,7 @@ export function createRenderer(canvas, options = {}) {
     // Baforada inicial de brasas subindo por tras do numero.
     if (!reducedMotion) {
       const cx = cssWidth / 2;
-      const cy = (BOARD_PAD * 2 + cellSize * ROWS + CELL_GAP * (ROWS - 1)) / 2;
+      const cy = BOARD_PAD + cellSize * 1.15; // topo do tabuleiro, longe do meio do jogo
       const n = 14 + Math.round(intensidade * 26);
       for (let i = 0; i < n; i++) {
         const cor = i % 3 === 0 ? '#ffe27a' : i % 3 === 1 ? '#ff8a3d' : '#ff4d4d';
@@ -433,7 +436,7 @@ export function createRenderer(canvas, options = {}) {
     // Chama continua lambendo o numero enquanto ele vive.
     if (!reducedMotion && comboFlare.life > 0.2 && Math.random() < 0.6) {
       const cx = cssWidth / 2;
-      const cy = (BOARD_PAD * 2 + cellSize * ROWS + CELL_GAP * (ROWS - 1)) / 2;
+      const cy = BOARD_PAD + cellSize * 1.15; // topo do tabuleiro, longe do meio do jogo
       const larg = cellSize * (1.4 + comboFlare.intensidade * 1.2);
       const cor = Math.random() < 0.5 ? '#ffcf5a' : '#ff7a2d';
       particles.emit({
@@ -459,24 +462,25 @@ export function createRenderer(canvas, options = {}) {
     const pop = t < 0.22 ? easeOutBack(t / 0.22) : 1;
     const saida = t > 0.7 ? 1 - (t - 0.7) / 0.3 : 1;
     const cx = cssWidth / 2;
-    const cy = (BOARD_PAD * 2 + cellSize * ROWS + CELL_GAP * (ROWS - 1)) / 2;
+    const cy = BOARD_PAD + cellSize * 1.15; // topo do tabuleiro, longe do meio do jogo
     const mult = 1 + Math.min(comboFlare.streak - 1, 6) * 0.2;
     // Cresce com o combo: pequeno no x2 (que acontece toda hora), tomando a
     // tela so nos combos grandes, que sao raros e merecem o estardalhaco.
-    const size = cellSize * (0.92 + comboFlare.intensidade * 1.5) * pop;
+    const size = cellSize * (0.8 + comboFlare.intensidade * 1.1) * pop;
 
     // Cor esquenta com o combo: amarelo -> laranja -> vermelho.
     const cor = comboFlare.intensidade > 0.6 ? '#ff5a3d' : comboFlare.intensidade > 0.25 ? '#ff9a2d' : '#ffd23d';
 
     ctx.save();
-    ctx.globalAlpha = Math.max(0, saida);
+    // Translucido: da para ver as pecas por tras do anuncio.
+    ctx.globalAlpha = Math.max(0, saida) * 0.82;
     ctx.translate(cx, cy);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
     ctx.font = `900 ${size}px 'Segoe UI', system-ui, sans-serif`;
-    ctx.lineWidth = Math.max(3, size * 0.1);
-    ctx.strokeStyle = 'rgba(10,4,24,0.9)';
+    ctx.lineWidth = Math.max(2, size * 0.08);
+    ctx.strokeStyle = 'rgba(10,4,24,0.7)';
     ctx.strokeText(`COMBO x${comboFlare.streak}`, 0, 0);
 
     // Brilho quente atras do texto.
@@ -491,7 +495,7 @@ export function createRenderer(canvas, options = {}) {
     ctx.font = `800 ${size * 0.42}px 'Segoe UI', system-ui, sans-serif`;
     ctx.fillStyle = '#fff';
     ctx.globalAlpha = Math.max(0, saida) * 0.85;
-    ctx.fillText(`x${mult.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')} dano`, 0, size * 0.5);
+    ctx.fillText(`x${mult.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')} dano`, 0, size * 0.62);
     ctx.restore();
   }
 

@@ -1200,3 +1200,67 @@ input[type='checkbox'] {
 
 .rank-delta.sobe { color: var(--safe); }
 .rank-delta.desce { color: var(--danger); }
+
+/* ------------------------------------------------------- modal de ranks */
+
+.rank-modal-card { max-width: 400px; }
+.rank-modal-card h3 { font-size: 0.95rem; margin: 18px 0 8px; }
+
+/* Cabecalho: onde o jogador esta agora. */
+.rank-atual {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  text-align: left;
+  background: var(--tile);
+  border: 1px solid var(--edge);
+  border-radius: 13px;
+  padding: 13px 15px;
+  margin: 6px 0 16px;
+}
+
+.rank-atual-selo { flex-shrink: 0; filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.45)); }
+.rank-atual-texto { display: flex; flex-direction: column; gap: 2px; }
+.rank-atual-texto small { color: var(--text-faint); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.07em; }
+.rank-atual-texto strong { font-size: 1.25rem; }
+.rank-atual-texto span { color: var(--text-dim); font-size: 0.8rem; }
+
+/* Escala, do topo a base. */
+.rank-ladder { list-style: none; margin: 0; padding: 0; }
+
+.rank-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 8px 10px;
+  border-radius: 11px;
+  border: 1px solid transparent;
+}
+
+.rank-row + .rank-row { margin-top: 4px; }
+.rank-row-selo { flex-shrink: 0; display: grid; place-items: center; }
+.rank-row-nome { font-weight: 700; font-size: 0.98rem; flex: 1; }
+
+/* O rank do jogador, destacado. */
+.rank-row.atual {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.09), transparent);
+  border-color: var(--edge);
+}
+
+.rank-tag {
+  font-size: 0.64rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+
+.rank-tag.voce { background: var(--accent); color: #2c0016; }
+.rank-tag.online { background: var(--tile); color: var(--cyan); border: 1px solid var(--edge); }
+
+/* Explicacao. */
+.rank-como { text-align: left; margin-top: 8px; }
+.rank-como ul { margin: 0; padding-left: 18px; }
+.rank-como li { color: var(--text-dim); font-size: 0.84rem; line-height: 1.6; margin-bottom: 6px; }
+.rank-como b { color: var(--text); }

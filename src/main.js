@@ -33,7 +33,15 @@ import { DIFFICULTIES } from './game/bot.js';
 import { createNetwork } from './net/peer.js';
 import { storage, suggestName } from './storage.js';
 import { notaExibida, estaCalibrando, chanceDeVitoria } from './game/rating.js';
-import { rankDe, seloDoRank, explicarVariacao, resultadoConta, NOTA_DOS_BOTS } from './game/ranks.js';
+import {
+  RANKS,
+  TETO_DO_SOLO,
+  rankDe,
+  seloDoRank,
+  explicarVariacao,
+  resultadoConta,
+  NOTA_DOS_BOTS,
+} from './game/ranks.js';
 
 // ---------------------------------------------------------------------------
 // Referencias de DOM
@@ -98,6 +106,8 @@ const el = {
   rankNome: $('rankNome'),
   rankDetalhe: $('rankDetalhe'),
   rankProgresso: $('rankProgresso'),
+  rankAtual: $('rankAtual'),
+  rankLadder: $('rankLadder'),
   rankResultado: $('rankResultado'),
   rankResultadoSelo: $('rankResultadoSelo'),
   rankResultadoNome: $('rankResultadoNome'),
@@ -1151,6 +1161,48 @@ function showStats() {
 }
 
 /**
+ * Modal do rank: como funciona + a escala inteira, do topo a base.
+ *
+ * Nao mostra o MMR em lugar nenhum — nem os limiares de pontos. O jogo todo
+ * assume que o jogador ve o RANK, nunca o numero; expor os pontos aqui abriria
+ * a mesma porta que a gente fechou de proposito. A escala mostra a ordem, o
+ * selo e marca onde voce esta, e so.
+ */
+function abrirModalRank() {
+  const nota = storage.rating;
+  const atual = rankDe(notaExibida(nota));
+
+  // Cabecalho: onde voce esta agora.
+  const detalhe = estaCalibrando(nota)
+    ? `Calibrando — ${nota.partidas} partida(s) jogada(s)`
+    : atual.proximo
+      ? `Faltam ${atual.faltam} para ${atual.proximo.nome}`
+      : 'Você chegou ao rank máximo.';
+  el.rankAtual.innerHTML =
+    `<span class="rank-atual-selo">${seloDoRank(atual, 52)}</span>` +
+    `<span class="rank-atual-texto">` +
+    `<small>Você está em</small>` +
+    `<strong style="color:${atual.cor}">${atual.nome}</strong>` +
+    `<span>${detalhe}</span></span>`;
+
+  // Escala do MAIS TOP ao mais baixo.
+  el.rankLadder.innerHTML = '';
+  for (const rank of [...RANKS].reverse()) {
+    const li = document.createElement('li');
+    li.className = 'rank-row' + (rank.id === atual.id ? ' atual' : '');
+    const soOnline = rank.minima > TETO_DO_SOLO;
+    li.innerHTML =
+      `<span class="rank-row-selo">${seloDoRank(rank, 34)}</span>` +
+      `<span class="rank-row-nome" style="color:${rank.cor}">${rank.nome}</span>` +
+      (rank.id === atual.id ? '<span class="rank-tag voce">você</span>' : '') +
+      (soOnline ? '<span class="rank-tag online">só online</span>' : '');
+    el.rankLadder.appendChild(li);
+  }
+
+  openModal('rankModal');
+}
+
+/**
  * Cartao de rank do menu.
  *
  * Mostra o RANK, nunca o MMR — numero cru vira obsessao e leitura errada
@@ -1335,7 +1387,7 @@ $('btnBackLobby').addEventListener('click', () => {
 
 $('btnRankCard').addEventListener('click', () => {
   audio.play('tap');
-  showStats();
+  abrirModalRank();
 });
 
 el.soundBtn.addEventListener('click', () => {

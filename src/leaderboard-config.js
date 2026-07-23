@@ -11,8 +11,10 @@
 //   localStorage.setItem('doceduelo:supabase', JSON.stringify({url, anonKey}))
 
 const PADRAO = {
-  url: '',
-  anonKey: '',
+  url: 'https://ctoqbmdngwstumujzzta.supabase.co',
+  // Chave "publishable" — publica de proposito, so le o placar e envia a
+  // propria nota. A chave SECRETA nunca vai aqui.
+  anonKey: 'sb_publishable_-Eth3gzXfl67JvP3Z-VnVA_2SDD0rje',
 };
 
 export function configLeaderboard() {

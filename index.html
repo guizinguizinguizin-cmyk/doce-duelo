@@ -98,6 +98,8 @@
     <button id="btnEditName" class="name-chip">
       Jogando como <strong id="menuPlayerName">—</strong> <span class="pencil" data-icone="editar"></span>
     </button>
+
+    <button id="btnAssistir" class="name-chip">▶ Assistir um replay</button>
   </section>
 
   <!-- ================= SOLO ================= -->
@@ -240,6 +242,7 @@
       <div class="result-stats" id="resultStats"></div>
       <div class="record-banner hidden" id="recordBanner"></div>
 
+      <button id="btnWatchReplay" class="mini-btn wide hidden">▶ Assistir esta partida</button>
       <button id="btnReplay" class="mini-btn wide hidden">💾 Copiar replay desta partida</button>
       <button id="btnRematch" class="big-btn primary hidden">Jogar de novo</button>
       <button id="btnBackLobby" class="big-btn">Voltar ao menu</button>
@@ -378,6 +381,24 @@
       Resumo: <b>alinhar 3 sobrevive, combo vence.</b>
     </p>
     <button class="close-btn" data-close-modal>Entendi, bora!</button>
+  </div>
+</div>
+
+<div id="replayBar" class="replay-bar hidden" aria-hidden="true">
+  <span class="replay-tag">▶ REPLAY</span>
+  <button id="replayPause" class="replay-ctrl" aria-label="Pausar">⏸</button>
+  <button id="replaySpeed" class="replay-ctrl" aria-label="Velocidade">1x</button>
+  <div class="replay-progress"><i id="replayProgress"></i></div>
+  <button id="replayExit" class="replay-ctrl" aria-label="Sair do replay">✕</button>
+</div>
+
+<div id="pasteReplayModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="prTitle">
+  <div class="modal-card">
+    <h2 id="prTitle">▶ Assistir replay</h2>
+    <p class="modal-sub">Cole o código de um replay (o botão "Copiar replay" gera um) para assistir a partida.</p>
+    <textarea id="replayInput" class="text-input" rows="4" placeholder="Cole o código do replay aqui..." style="resize:none;font-family:monospace;font-size:0.75rem"></textarea>
+    <button id="btnPlayPasted" class="close-btn">Assistir</button>
+    <button class="mini-btn wide" data-close-modal>Cancelar</button>
   </div>
 </div>
 

@@ -29,6 +29,8 @@ import { GEM_COLORS, BLOCKED_COLOR, drawGem } from './render/gems.js';
 import { ICONES, aplicarIcones } from './render/icons.js';
 import { createAudio } from './audio/audio.js';
 import { createSession } from './game/session.js';
+import { createMatch } from './game/match.js';
+import { desserializar } from './game/replay.js';
 import { PRESSURE_MAX, streakMultiplier } from './game/balance.js';
 import { DIFFICULTIES } from './game/bot.js';
 import { createNetwork } from './net/peer.js';
@@ -118,6 +120,14 @@ const el = {
   rankResultadoMotivo: $('rankResultadoMotivo'),
   btnRematch: $('btnRematch'),
   btnReplay: $('btnReplay'),
+  btnWatchReplay: $('btnWatchReplay'),
+  btnAssistir: $('btnAssistir'),
+  replayInput: $('replayInput'),
+  replayBar: $('replayBar'),
+  replayPause: $('replayPause'),
+  replaySpeed: $('replaySpeed'),
+  replayExit: $('replayExit'),
+  replayProgress: $('replayProgress'),
   debugPanel: $('debugPanel'),
   debugToggle: $('debugToggle'),
   gameOverCard: $('gameOverCard'),
@@ -617,6 +627,166 @@ async function playPhases(phases) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Player de replay
+// ---------------------------------------------------------------------------
+//
+// Reconstroi a partida da SEMENTE e reproduz as jogadas gravadas, animadas no
+// tabuleiro. Reusa a tela de batalha (tabuleiro principal = jogador em foco,
+// miniaturas = os outros) e o motor determinista (createMatch) para a pressao,
+// os ataques e as eliminacoes saírem exatamente como na partida original.
+
+const espera = (ms) => new Promise((r) => setTimeout(r, ms));
+
+let replayRodando = false;
+let replayPausado = false;
+let replayVelocidade = 1;
+
+function atualizarBarraReplay(partida, foco) {
+  const st = partida.instantaneo(foco);
+  if (!st) return;
+  const pctAtual = (st.pressure / PRESSURE_MAX) * 100;
+  const pctPend = Math.max(0, Math.min(100 - pctAtual, (st.pending / PRESSURE_MAX) * 100));
+  el.myBarFill.style.width = pctAtual + '%';
+  el.myPendingFill.style.left = pctAtual + '%';
+  el.myPendingFill.style.width = pctPend + '%';
+  el.myBarCaption.textContent = `${st.pressure} / ${PRESSURE_MAX}`;
+  el.myBarFill.classList.toggle('atencao', st.alert === 'atencao');
+  el.myBarFill.classList.toggle('perigo', st.alert === 'perigo');
+  el.myBarFill.classList.toggle('critico', st.alert === 'critico');
+  el.myScore.textContent = st.score;
+  el.incomingBadge.classList.toggle('hidden', st.pending <= 0);
+  if (st.pending > 0) el.incomingBadge.textContent = '+' + st.pending;
+}
+
+function montarMinisReplay(replay, foco) {
+  el.opponentsRow.innerHTML = '';
+  opponentCards.clear();
+  for (const jog of replay.jogadores) {
+    if (jog.id === foco) continue;
+    buildOpponentCard({ id: jog.id, name: jog.name });
+  }
+}
+
+function atualizarMiniReplay(partida, id, mesa) {
+  const refs = opponentCards.get(id);
+  if (!refs) return;
+  const st = partida.instantaneo(id);
+  if (!st) return;
+  refs.score.textContent = st.score;
+  refs.fill.style.width = Math.min(100, (st.pressure / PRESSURE_MAX) * 100) + '%';
+  refs.card.classList.toggle('eliminated', !st.alive);
+  const tipos = serializeTypes(mesa.grid);
+  for (let i = 0; i < CELL_COUNT; i++) {
+    const codigo = tipos[i];
+    refs.cells[i].style.background = codigo >= GEM_COLORS.length ? BLOCKED_COLOR : GEM_COLORS[codigo] || '#2b1a52';
+  }
+}
+
+async function animarJogadaReplay(a, b, resultado) {
+  audio.play('swap');
+  await renderer.animateSwap(a, b);
+  await playPhases(resultado.phases);
+}
+
+function sairDoReplay() {
+  replayRodando = false;
+  document.body.classList.remove('modo-replay');
+  el.replayBar.classList.add('hidden');
+  session = null;
+  showScreen('Menu');
+  refreshRankCard();
+}
+
+async function assistirReplay(replay) {
+  if (!replay || !replay.jogadores || !replay.jogadores.length) {
+    alert('Replay inválido.');
+    return;
+  }
+
+  const foco = (replay.jogadores.find((p) => !p.isBot) || replay.jogadores[0]).id;
+  replayRodando = true;
+  replayPausado = false;
+  replayVelocidade = 1;
+  el.replaySpeed.textContent = '1x';
+  el.replayPause.textContent = '⏸';
+
+  // Reconstroi um tabuleiro por jogador (mesma semente) e o motor da partida.
+  const mesas = new Map();
+  for (const jog of replay.jogadores) {
+    const r = createMatchRandom(replay.seed, COLS);
+    mesas.set(jog.id, { grid: createGrid(r), rng: r });
+  }
+  const partida = createMatch({ seed: replay.seed, players: replay.jogadores, startedAt: 0 });
+
+  document.body.classList.add('modo-replay');
+  el.myNameLabel.textContent = (replay.jogadores.find((p) => p.id === foco) || {}).name || 'Jogador';
+  el.battleHint.textContent = 'Assistindo replay';
+  showScreen('Battle');
+
+  grid = mesas.get(foco).grid;
+  renderer.setGrid(grid);
+  renderer.setSelection(null);
+  renderer.setHint(null);
+  montarMinisReplay(replay, foco);
+  atualizarBarraReplay(partida, foco);
+  el.replayBar.classList.remove('hidden');
+  await renderer.introDrop();
+
+  const linha = [
+    ...replay.eliminacoes.map((e) => ({ t: e.t, ordem: 0, tipo: 'saida', ...e })),
+    ...replay.jogadas.map((m) => ({ t: m.t, ordem: 1, tipo: 'jogada', ...m })),
+  ].sort((a, b) => a.t - b.t || a.ordem - b.ordem);
+
+  const dur = Math.max(1, replay.duracao);
+  let tAnterior = 0;
+
+  for (const ent of linha) {
+    if (!replayRodando) return;
+    while (replayPausado && replayRodando) await espera(80);
+    if (!replayRodando) return;
+
+    // Espera proporcional ao intervalo real, limitada para nao arrastar.
+    const gap = Math.min(1000, Math.max(50, ent.t - tAnterior));
+    await espera(gap / replayVelocidade);
+    if (!replayRodando) return;
+    tAnterior = ent.t;
+
+    partida.avancarPara(ent.t);
+    atualizarBarraReplay(partida, foco);
+    for (const [id, mesa] of mesas) if (id !== foco) atualizarMiniReplay(partida, id, mesa);
+    el.replayProgress.style.width = Math.min(100, (ent.t / dur) * 100) + '%';
+
+    if (ent.tipo === 'saida') {
+      partida.eliminar(ent.j, ent.t, ent.motivo);
+      for (const [id, mesa] of mesas) if (id !== foco) atualizarMiniReplay(partida, id, mesa);
+      if (partida.finished) break;
+      continue;
+    }
+
+    const mesa = mesas.get(ent.j);
+    if (!findMove(mesa.grid)) shuffleGrid(mesa.grid, mesa.rng);
+    const resultado = trySwap(mesa.grid, ent.a, ent.b, mesa.rng);
+    partida.aplicarJogada(ent.j, resultado, ent.t);
+
+    if (ent.j === foco && resultado.ok) {
+      grid = mesa.grid;
+      await animarJogadaReplay(ent.a, ent.b, resultado);
+      atualizarBarraReplay(partida, foco);
+    } else {
+      atualizarMiniReplay(partida, ent.j, mesa);
+    }
+    if (partida.finished) break;
+  }
+
+  if (!replayRodando) return;
+  el.replayProgress.style.width = '100%';
+  const venceu = partida.winnerId === foco;
+  el.battleHint.textContent = venceu ? '🏆 Vitória nesta partida' : 'Fim do replay';
+  await espera(1400);
+  sairDoReplay();
+}
+
 /**
  * Deposita o lixo acumulado no tabuleiro.
  *
@@ -1059,6 +1229,7 @@ function finishMatch(winnerId, summary) {
   const replay = session.replayDaPartida ? session.replayDaPartida() : null;
   replayPendente = replay && replay.veredito.valido ? replay.dados : null;
   el.btnReplay.classList.toggle('hidden', !replayPendente);
+  el.btnWatchReplay.classList.toggle('hidden', !replayPendente);
   if (replay && !replay.veredito.valido) {
     // Nao oferecer um replay que nao se reproduz: melhor nao ter do que
     // entregar um arquivo que mostra outra partida.
@@ -1589,6 +1760,47 @@ el.btnHint.addEventListener('click', () => {
 });
 
 let replayPendente = null;
+
+el.btnWatchReplay.addEventListener('click', () => {
+  if (!replayPendente) return;
+  audio.play('tap');
+  assistirReplay(replayPendente);
+});
+
+el.replayPause.addEventListener('click', () => {
+  replayPausado = !replayPausado;
+  el.replayPause.textContent = replayPausado ? '▶' : '⏸';
+});
+
+el.replaySpeed.addEventListener('click', () => {
+  replayVelocidade = replayVelocidade >= 4 ? 1 : replayVelocidade * 2;
+  el.replaySpeed.textContent = replayVelocidade + 'x';
+});
+
+el.replayExit.addEventListener('click', () => {
+  audio.play('tap');
+  sairDoReplay();
+});
+
+el.btnAssistir.addEventListener('click', () => {
+  audio.play('tap');
+  el.replayInput.value = '';
+  openModal('pasteReplayModal');
+});
+
+$('btnPlayPasted').addEventListener('click', () => {
+  const txt = el.replayInput.value.trim();
+  if (!txt) return;
+  let dados;
+  try {
+    dados = desserializar(txt);
+  } catch {
+    alert('Código de replay inválido.');
+    return;
+  }
+  closeModal('pasteReplayModal');
+  assistirReplay(dados);
+});
 
 el.btnReplay.addEventListener('click', async () => {
   if (!replayPendente) return;

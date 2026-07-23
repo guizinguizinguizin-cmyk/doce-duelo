@@ -16,6 +16,7 @@
 
 import { createBot } from './bot.js';
 import { NET_HOST_ID } from '../net/peer.js';
+import { createRng } from '../core/rng.js';
 import { createPressure } from './pressure.js';
 import { unitsForMove } from './attack.js';
 import {
@@ -45,6 +46,10 @@ export function createSession(hooks = {}) {
   let lastScoringMove = 0;
   let matchStartedAt = 0;
   let tickTimer = null;
+  let matchSeed = 0;
+  // Gerador dedicado as DECISOES do duelo (desempate de alvo). Semeado a partir
+  // da semente da partida, para o replay reproduzir as mesmas escolhas.
+  let duelRng = createRng(0);
 
   // Estatisticas da partida, para a tela de fim e para o perfil.
   const stats = {
@@ -111,7 +116,7 @@ export function createSession(hooks = {}) {
         id,
         name: nomeDeBot(i, difficulty),
         difficulty,
-        seed: (Date.now() + i * 7919) >>> 0,
+        brainSeed: (0x9e3779b9 ^ ((i + 1) * 2654435761)) >>> 0,
         hooks: {
           onState: ({ id: botId, score, pressure: press, pending, boardTypes }) => {
             const p = findPlayer(botId);
@@ -221,10 +226,14 @@ export function createSession(hooks = {}) {
 
     // Alvo preferencial: quem esta mais perto do colapso, contando o que ja
     // esta a caminho. Da leitura tatica em vez de sorteio no escuro.
+    //
+    // O desempate usa o gerador SEMEADO, nunca Math.random. Escolha de alvo e
+    // regra de jogo: com Math.random, reexecutar a partida atacaria outro
+    // jogador e o replay mentiria.
     candidates.sort((a, b) => b.pressure + b.pending - (a.pressure + a.pending));
     const lider = candidates[0];
     const empatados = candidates.filter((p) => p.pressure + p.pending >= lider.pressure + lider.pending - 2);
-    const target = empatados[Math.floor(Math.random() * empatados.length)];
+    const target = empatados[duelRng.int(empatados.length)];
 
     emit('onAttackSent', fromId, target.id, units);
     deliverAttack(target.id, units, fromId);
@@ -463,7 +472,7 @@ export function createSession(hooks = {}) {
           pending: 0,
           boardTypes: null,
         }));
-        beginLocal();
+        beginLocal(msg.semente);
         emit('onStart', msg.semente);
         break;
 
@@ -519,7 +528,13 @@ export function createSession(hooks = {}) {
   // Ciclo da partida
   // ---------------------------------------------------------------------------
 
-  function beginLocal() {
+  function beginLocal(semente) {
+    matchSeed = semente >>> 0;
+    // Semente derivada: mexer nas decisoes do duelo nao embaralha o tabuleiro.
+    duelRng = createRng((matchSeed ^ 0xa77ac4) >>> 0);
+    // Os bots jogam no MESMO tabuleiro que o jogador recebeu.
+    for (const bot of bots.values()) bot.reset(matchSeed);
+
     active = true;
     pressure.reset();
     localScore = 0;
@@ -554,7 +569,7 @@ export function createSession(hooks = {}) {
       net.closeRoom();
       net.broadcast({ tipo: 'iniciar', jogadores: rosterPayload(), semente });
     }
-    beginLocal();
+    beginLocal(semente);
     emit('onStart', semente);
   }
 

@@ -8,8 +8,8 @@
 // Isso importa porque um bot que trapaceia e obvio em dez segundos e o jogador
 // para de levar o modo solo a serio.
 
-import { createGrid, allMoves, trySwap, cloneGrid, findMove, shuffleGrid, serializeTypes } from '../core/board.js';
-import { createRng } from '../core/rng.js';
+import { createGrid, allMoves, trySwap, cloneGrid, findMove, shuffleGrid, serializeTypes, COLS } from '../core/board.js';
+import { createRng, createMatchRandom } from '../core/rng.js';
 import { STREAK_TIMEOUT_MS, streakMultiplier } from './balance.js';
 import { createPressure } from './pressure.js';
 import { unitsForMove } from './attack.js';
@@ -64,11 +64,19 @@ export const DIFFICULTIES = {
   },
 };
 
-export function createBot({ id, name, difficulty = 'normal', seed, hooks = {} }) {
+/**
+ * `brainSeed` decide as JOGADAS do bot (qual troca ele escolhe, quando erra).
+ * O TABULEIRO nao vem daqui: ele vem da semente da partida, igual ao do
+ * jogador. Antes o bot sorteava o proprio tabuleiro, o que quebrava o pilar
+ * de "habilidade vence sorte" — nao adianta os dois receberem as mesmas pecas
+ * se o adversario esta jogando noutro tabuleiro.
+ */
+export function createBot({ id, name, difficulty = 'normal', brainSeed, hooks = {} }) {
   const config = DIFFICULTIES[difficulty] || DIFFICULTIES.normal;
-  const rng = createRng(seed);
+  const rng = createRng(brainSeed);
 
-  let grid = createGrid(rng);
+  let boardRng = createMatchRandom(brainSeed >>> 0, COLS);
+  let grid = createGrid(boardRng);
   const pressure = createPressure();
   let score = 0;
   let alive = true;
@@ -85,7 +93,7 @@ export function createBot({ id, name, difficulty = 'normal', seed, hooks = {} })
    */
   function evaluate(move) {
     const copy = cloneGrid(grid);
-    const simRng = rng.fork();
+    const simRng = boardRng.fork();
     const result = trySwap(copy, move.a, move.b, simRng);
     if (!result.ok) return -1;
     return result.points + result.cascades * 12;
@@ -130,11 +138,11 @@ export function createBot({ id, name, difficulty = 'normal', seed, hooks = {} })
   function playTurn() {
     if (!running || !alive) return;
 
-    if (!findMove(grid)) shuffleGrid(grid, rng);
+    if (!findMove(grid)) shuffleGrid(grid, boardRng);
 
     const move = chooseMove();
     if (move) {
-      const result = trySwap(grid, move.a, move.b, rng);
+      const result = trySwap(grid, move.a, move.b, boardRng);
       if (result.ok && result.points > 0) {
         const now = Date.now();
         if (now - lastMoveAt > STREAK_TIMEOUT_MS) comboStreak = 0;
@@ -207,9 +215,11 @@ export function createBot({ id, name, difficulty = 'normal', seed, hooks = {} })
       }
     },
 
-    reset(newSeed) {
+    /** Recomeca no tabuleiro da PARTIDA — o mesmo que o jogador recebeu. */
+    reset(matchSeed) {
       stop();
-      grid = createGrid(createRng(newSeed));
+      boardRng = createMatchRandom(matchSeed >>> 0, COLS);
+      grid = createGrid(boardRng);
       pressure.reset();
       score = 0;
       alive = true;

@@ -589,21 +589,67 @@ export function createRenderer(canvas, options = {}) {
 
   function drawBoardBackground() {
     const h = BOARD_PAD * 2 + cellSize * ROWS + CELL_GAP * (ROWS - 1);
+    const raio = 18;
+
+    // Base em degrade, um pouco mais rico que dois tons chapados.
     const g = ctx.createLinearGradient(0, 0, 0, h);
-    g.addColorStop(0, '#1b1036');
-    g.addColorStop(1, '#120a26');
+    g.addColorStop(0, '#241547');
+    g.addColorStop(0.5, '#180d30');
+    g.addColorStop(1, '#0f0722');
     ctx.fillStyle = g;
-    roundRect(0, 0, cssWidth, h, 16);
+    roundRect(0, 0, cssWidth, h, raio);
     ctx.fill();
 
-    // Nichos das celulas: dao estrutura e ajudam a mirar a jogada.
-    ctx.fillStyle = 'rgba(255,255,255,0.035)';
+    // Nichos rebaixados: fundo escuro + um fio de luz na aresta de baixo,
+    // que ler como se a casa fosse escavada. O custo continua O(64) fills,
+    // sem gradiente por celula (que mataria o desempenho no celular).
+    const lipH = Math.max(1, cellSize * 0.06);
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
-        roundRect(BOARD_PAD + c * pitch, BOARD_PAD + r * pitch, cellSize, cellSize, cellSize * 0.24);
+        const x = BOARD_PAD + c * pitch;
+        const y = BOARD_PAD + r * pitch;
+        ctx.fillStyle = 'rgba(0,0,0,0.22)';
+        roundRect(x, y, cellSize, cellSize, cellSize * 0.24);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.05)';
+        roundRect(x, y + cellSize - lipH, cellSize, lipH, lipH);
         ctx.fill();
       }
     }
+
+    // Vinheta interna: cantos mais escuros, foco no centro do tabuleiro.
+    ctx.save();
+    roundRect(0, 0, cssWidth, h, raio);
+    ctx.clip();
+    const vg = ctx.createRadialGradient(
+      cssWidth / 2, h * 0.42, Math.min(cssWidth, h) * 0.18,
+      cssWidth / 2, h * 0.5, Math.max(cssWidth, h) * 0.72
+    );
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(1, 'rgba(0,0,0,0.42)');
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, cssWidth, h);
+
+    // Brilho no topo: uma leve claridade que sugere luz vindo de cima.
+    const sheen = ctx.createLinearGradient(0, 0, 0, h * 0.42);
+    sheen.addColorStop(0, 'rgba(255,255,255,0.06)');
+    sheen.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = sheen;
+    ctx.fillRect(0, 0, cssWidth, h * 0.42);
+    ctx.restore();
+
+    // Moldura: um fio de luz em volta, mais claro no topo. Da acabamento e
+    // separa o tabuleiro do fundo atras dele.
+    ctx.save();
+    const rim = ctx.createLinearGradient(0, 0, 0, h);
+    rim.addColorStop(0, 'rgba(255,255,255,0.18)');
+    rim.addColorStop(0.5, 'rgba(255,255,255,0.04)');
+    rim.addColorStop(1, 'rgba(150,110,230,0.12)');
+    ctx.strokeStyle = rim;
+    ctx.lineWidth = 1.5;
+    roundRect(0.75, 0.75, cssWidth - 1.5, h - 1.5, raio);
+    ctx.stroke();
+    ctx.restore();
 
     // Aviso de perigo: borda vermelha pulsando quando a barra esta quase cheia.
     if (dangerLevel > 0.01) {
@@ -611,7 +657,7 @@ export function createRenderer(canvas, options = {}) {
       ctx.save();
       ctx.strokeStyle = `rgba(255,70,70,${dangerLevel * pulse * 0.9})`;
       ctx.lineWidth = 3 + dangerLevel * 4;
-      roundRect(2, 2, cssWidth - 4, h - 4, 16);
+      roundRect(2, 2, cssWidth - 4, h - 4, raio);
       ctx.stroke();
       ctx.restore();
     }
@@ -664,10 +710,17 @@ export function createRenderer(canvas, options = {}) {
   }
 
   function drawSprites() {
+    // Respiro em repouso: com o tabuleiro parado, cada peca oscila de leve, com
+    // fase propria (pelo id), formando uma onda suave em vez de tudo junto. So
+    // afeta o DESENHO — a posicao logica nunca muda. Durante uma jogada a onda
+    // e desligada, para nao tremer no meio da queda.
+    const emRepouso = !reducedMotion && tweens.length === 0;
+
     for (const sprite of sprites.values()) {
       if (sprite.alpha <= 0.01 || sprite.scale <= 0.01) continue;
       const x = cellX(sprite.col);
-      const y = cellY(sprite.row);
+      const bob = emRepouso ? Math.sin(time * 1.5 + sprite.id * 0.7) * cellSize * 0.025 : 0;
+      const y = cellY(sprite.row) + bob;
       const radius = (cellSize / 2) * 0.86 * sprite.scale;
 
       ctx.save();

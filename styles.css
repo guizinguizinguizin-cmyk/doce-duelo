@@ -44,10 +44,9 @@ body {
 }
 
 body {
+  /* Base escura em degrade; a vida vem dos orbes de .bg-fx por cima. */
   background:
-    radial-gradient(circle at 20% -10%, #35186b 0%, transparent 55%),
-    radial-gradient(circle at 85% 8%, #4a1350 0%, transparent 50%),
-    var(--bg);
+    linear-gradient(180deg, #170b31 0%, var(--bg) 45%, var(--bg-deep) 100%);
   background-attachment: fixed;
   color: var(--text);
   font-family: 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
@@ -1264,3 +1263,90 @@ input[type='checkbox'] {
 .rank-como ul { margin: 0; padding-left: 18px; }
 .rank-como li { color: var(--text-dim); font-size: 0.84rem; line-height: 1.6; margin-bottom: 6px; }
 .rank-como b { color: var(--text); }
+
+/* ================================================================ atmosfera */
+
+/* Orbes de luz driftando devagar, atras de tudo. Sao o "fundo vivo": custam
+   quase nada (transform/opacity compositados pela GPU) e dao profundidade que
+   um gradiente chapado nunca tem. */
+
+.bg-fx {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.bg-fx .orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(64px);
+  mix-blend-mode: screen;
+  will-change: transform;
+}
+
+.bg-fx .o1 {
+  width: 72vw;
+  height: 72vw;
+  left: -20vw;
+  top: -12vh;
+  background: radial-gradient(circle, rgba(255, 77, 141, 0.55), transparent 68%);
+  animation: orbDrift1 26s ease-in-out infinite alternate;
+}
+
+.bg-fx .o2 {
+  width: 64vw;
+  height: 64vw;
+  right: -22vw;
+  top: 6vh;
+  background: radial-gradient(circle, rgba(69, 217, 255, 0.4), transparent 68%);
+  animation: orbDrift2 34s ease-in-out infinite alternate;
+}
+
+.bg-fx .o3 {
+  width: 82vw;
+  height: 82vw;
+  left: 8vw;
+  bottom: -34vh;
+  background: radial-gradient(circle, rgba(180, 92, 255, 0.42), transparent 70%);
+  animation: orbDrift3 40s ease-in-out infinite alternate;
+}
+
+@keyframes orbDrift1 {
+  from { transform: translate(0, 0) scale(1); }
+  to { transform: translate(14vw, 10vh) scale(1.12); }
+}
+@keyframes orbDrift2 {
+  from { transform: translate(0, 0) scale(1.05); }
+  to { transform: translate(-12vw, 14vh) scale(0.92); }
+}
+@keyframes orbDrift3 {
+  from { transform: translate(0, 0) scale(1); }
+  to { transform: translate(-10vw, -12vh) scale(1.15); }
+}
+
+/* Vinheta: escurece as bordas e puxa o olho para o centro. */
+.bg-fx::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 34%, transparent 42%, rgba(6, 2, 16, 0.6) 100%);
+}
+
+/* Grao finissimo: mata o banding dos gradientes grandes e da textura de tela
+   premium. Um SVG de ruido embutido, sem requisicao externa. */
+.bg-grain {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.045;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Menos animacao: congela o drift, mantem a atmosfera parada. */
+@media (prefers-reduced-motion: reduce) {
+  .bg-fx .orb { animation: none; }
+}

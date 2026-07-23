@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1a0f33">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Doce Duelo">
+<meta name="description" content="Combine 3 e ataque os adversarios em tempo real, ate 4 jogadores - feito por HollowVoid Guilherme">
+<title>Doce Duelo — feito por HollowVoid Guilherme</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="hitFlashOverlay" class="hit-flash-overlay"></div>
+
+<header class="app-header">
+  <h1>🍬 Doce Duelo</h1>
+  <div class="credit-banner">Feito por <strong>HollowVoid Guilherme</strong></div>
+</header>
+
+<main id="app">
+
+  <!-- LOBBY -->
+  <section id="screenLobby" class="screen">
+    <div class="card">
+      <h2>Jogar com outras pessoas</h2>
+      <p class="sub">Cada jogador usa o próprio celular. Um cria a sala, os outros entram com o código.</p>
+
+      <p class="field-label">Quantos jogadores na sala?</p>
+      <div class="players-select" id="playersSelect">
+        <button data-n="2" class="player-count-btn active">2</button>
+        <button data-n="3" class="player-count-btn">3</button>
+        <button data-n="4" class="player-count-btn">4</button>
+      </div>
+
+      <button id="btnCreate" class="big-btn primary">Criar sala</button>
+
+      <div class="divider"><span>ou</span></div>
+
+      <div class="join-row">
+        <input id="joinCodeInput" class="code-input" placeholder="Código da sala" maxlength="6" autocomplete="off" autocapitalize="characters">
+        <button id="btnJoin" class="big-btn">Entrar</button>
+      </div>
+
+      <div id="lobbyStatus" class="lobby-status"></div>
+    </div>
+  </section>
+
+  <!-- WAITING ROOM -->
+  <section id="screenWaiting" class="screen hidden">
+    <div class="card center">
+      <h2>Sala de espera</h2>
+      <div id="hostCodeBox" class="host-code-box hidden">
+        <p>Compartilhe este código:</p>
+        <div class="code-display" id="hostCodeDisplay">------</div>
+        <button id="copyCodeBtn" class="mini-btn">Copiar código</button>
+      </div>
+      <p class="sub" id="waitingSub">Aguardando jogadores...</p>
+      <ul class="roster-list" id="rosterList"></ul>
+      <button id="btnStartGame" class="big-btn primary hidden">Iniciar partida</button>
+      <button id="btnCancelWait" class="mini-btn">Cancelar</button>
+    </div>
+  </section>
+
+  <!-- COUNTDOWN -->
+  <section id="screenCountdown" class="screen hidden">
+    <div class="countdown-num" id="countdownNum">3</div>
+    <p class="sub">Prepare-se!</p>
+  </section>
+
+  <!-- BATTLE -->
+  <section id="screenBattle" class="screen hidden">
+    <div class="opponents-row" id="opponentsRow"></div>
+
+    <div class="my-area">
+      <div class="my-top-row">
+        <span class="score-label">Você — <span id="myScore">0</span> pts <span id="comboBadge" class="combo-badge hidden"></span></span>
+        <span id="connStatus" class="conn-status">🟢 conectado</span>
+      </div>
+      <div class="bar-track-h">
+        <div class="bar-fill-h mine" id="myBarFill"></div>
+      </div>
+      <div class="board-wrap">
+        <div id="board" class="board"></div>
+      </div>
+      <p class="hint">Arraste um doce para um vizinho para trocar</p>
+    </div>
+  </section>
+
+  <!-- GAME OVER -->
+  <section id="screenGameOver" class="screen hidden">
+    <div class="card center">
+      <h2 id="resultTitle">Fim de jogo</h2>
+      <p id="resultSub" class="sub"></p>
+      <button id="btnRematch" class="big-btn primary hidden">Jogar de novo</button>
+      <button id="btnBackLobby" class="big-btn">Voltar ao início</button>
+    </div>
+  </section>
+
+</main>
+
+<footer class="app-footer">
+  <button id="aboutBtn" class="about-btn">ℹ️ Sobre este app</button>
+</footer>
+
+<div id="aboutModal" class="modal hidden">
+  <div class="modal-card">
+    <h2>🍬 Doce Duelo</h2>
+    <p class="modal-credit">Feito por<br><strong>HollowVoid Guilherme</strong></p>
+    <p class="modal-sub">Combine 3 ou mais doces para atacar os adversários. Se sua barra encher, você perde! Até 4 jogadores.</p>
+    <button id="closeAbout" class="close-btn">Fechar</button>
+  </div>
+</div>
+
+<script src="vendor/peerjs.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

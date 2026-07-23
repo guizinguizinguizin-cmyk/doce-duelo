@@ -22,6 +22,41 @@ const ICE_SERVERS = [
   { urls: 'stun:global.stun.twilio.com:3478' },
 ];
 
+/**
+ * Servidor de sinalizacao.
+ *
+ * Por padrao usa o broker publico e gratuito do PeerJS. Isso e conveniente e
+ * e um risco de producao conhecido: ele tem limite de taxa e ja saiu do ar
+ * mais de uma vez. Poder apontar para outro servidor sem editar codigo serve
+ * para duas coisas — hospedar o proprio quando o jogo crescer, e rodar os
+ * testes de multiplayer contra um servidor local, sem depender da internet
+ * nem poluir o broker publico.
+ *
+ *   ?peer=localhost:9000        -> servidor local, sem TLS
+ *   ?peer=meu.servidor.com:443  -> servidor proprio
+ */
+function servidorDeSinalizacao() {
+  let alvo = null;
+  try {
+    const daUrl = new URLSearchParams(location.search).get('peer');
+    alvo = daUrl || localStorage.getItem('doceduelo:peerServer');
+  } catch {
+    alvo = null;
+  }
+  if (!alvo) return null;
+
+  const [host, porta] = String(alvo).split(':');
+  if (!host) return null;
+  const port = Number(porta) || 443;
+  return {
+    host,
+    port,
+    path: '/',
+    // localhost em teste roda sem certificado; qualquer outro host exige TLS.
+    secure: host !== 'localhost' && host !== '127.0.0.1',
+  };
+}
+
 function generateCode() {
   let code = '';
   for (let i = 0; i < CODE_LENGTH; i++) {
@@ -65,13 +100,24 @@ export function createNetwork(hooks = {}) {
   let watchdogTimer = null;
   let latency = 0;
 
+  // Rede descartada de proposito para de avisar o jogo.
+  //
+  // Sem isso havia uma corrida real: quando a sala esta cheia o anfitriao
+  // manda 'recusado' e FECHA a conexao logo em seguida. O jogo mostrava
+  // "Essa sala ja esta cheia" e, milissegundos depois, o evento de fechamento
+  // sobrescrevia com "O anfitriao encerrou a sala" — mensagem generica e
+  // enganosa, para uma desconexao que era esperada. Depois de chamar
+  // destroy(), nenhum evento tardio deve mais chegar ao jogo.
+  let descartada = false;
+
   const emit = (name, ...args) => {
+    if (descartada) return;
     const fn = hooks[name];
     if (fn) fn(...args);
   };
 
   function peerOptions() {
-    return { config: { iceServers: ICE_SERVERS } };
+    return { config: { iceServers: ICE_SERVERS }, ...(servidorDeSinalizacao() || {}) };
   }
 
   // ---------------------------------------------------------------------------
@@ -189,6 +235,7 @@ export function createNetwork(hooks = {}) {
 
   function host(playerLimit, attempt = 0) {
     destroy();
+    descartada = false;
     isHost = true;
     myId = HOST_ID;
     maxPlayers = playerLimit;
@@ -257,6 +304,7 @@ export function createNetwork(hooks = {}) {
 
   function join(code, metadata = {}) {
     destroy();
+    descartada = false;
     isHost = false;
     roomCode = String(code || '').trim().toUpperCase();
 
@@ -309,6 +357,7 @@ export function createNetwork(hooks = {}) {
   }
 
   function destroy() {
+    descartada = true;
     stopHeartbeat();
     for (const conn of connections.values()) {
       try {

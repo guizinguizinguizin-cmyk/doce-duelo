@@ -824,6 +824,10 @@ function resetOnlineButtons() {
 
 function hostRoom() {
   lastMode = 'online';
+  // Descarta qualquer sala anterior antes de abrir outra. Sem isso, cada
+  // tentativa deixava um Peer vivo e registrado no servidor de sinalizacao —
+  // e a tentativa seguinte dava timeout em vez de conectar.
+  leaveRoom();
   network = createNetworkWithHooks();
   session = createSessionWithHooks();
   session.setupOnline({ network, hostMode: true, playerName: storage.name || 'Anfitrião' });
@@ -840,6 +844,7 @@ function joinRoom() {
     return;
   }
   lastMode = 'online';
+  leaveRoom(); // ver hostRoom: tentativa anterior nao pode deixar Peer orfao
   network = createNetworkWithHooks();
   session = createSessionWithHooks();
   session.setupOnline({ network, hostMode: false, playerName: storage.name || 'Jogador' });
@@ -850,7 +855,14 @@ function joinRoom() {
 }
 
 function renderRosterList(roster) {
-  if (screens.Waiting.classList.contains('hidden')) return;
+  // Sem guarda de "so renderiza se a tela estiver visivel".
+  //
+  // Tinha uma, e ela causava dois bugs: o roster chega ANTES de a sala de
+  // espera ser exibida (o anfitriao monta a lista ao criar a sala, o convidado
+  // ao receber 'bemvindo'), entao a renderizacao era pulada e nunca refeita —
+  // o convidado ficava olhando uma sala vazia para sempre, porque nenhuma
+  // outra mensagem de roster chegava depois. Desenhar alguns <li> num elemento
+  // escondido nao custa nada; perder o unico evento que tinha os dados custa.
   el.rosterList.innerHTML = '';
   for (const player of roster) {
     const li = document.createElement('li');

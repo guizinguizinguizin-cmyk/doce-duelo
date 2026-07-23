@@ -1,0 +1,6 @@
+# Configuracao do Netlify, caso voce prefira publicar por la em vez do GitHub
+# Pages. Ao conectar o repositorio, o Netlify ja sabe montar e publicar sozinho.
+
+[build]
+  command = "node scripts/build.js"
+  publish = "dist"

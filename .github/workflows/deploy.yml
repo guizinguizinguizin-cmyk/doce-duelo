@@ -1,0 +1,49 @@
+# Publica o jogo no GitHub Pages a cada push na branch main.
+#
+# Nao precisa de `npm install`: scripts/build.js usa so modulos nativos do
+# Node, entao o CI e rapido e nao baixa playwright/cloudflared a toa.
+#
+# Depois do primeiro push, va em Settings -> Pages -> Source: "GitHub Actions".
+# A URL fica https://SEU-USUARIO.github.io/NOME-DO-REPO/
+
+name: Publicar
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # permite publicar na mao pelo site do GitHub
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Se dois pushes vierem juntos, so o mais novo publica.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Montar dist/
+        run: node scripts/build.js
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - id: deploy
+        uses: actions/deploy-pages@v4

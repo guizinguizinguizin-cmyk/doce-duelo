@@ -1,101 +1,108 @@
-# Publicar o Doce Duelo
+# Publicar o Doce Duelo (link permanente e grátis)
 
-O jogo é 100% estático — não precisa de servidor, banco nem build complicado.
-Qualquer hospedagem de site estático serve, e todas as opções abaixo são
-gratuitas.
+O jogo é 100% estático — não precisa de servidor, banco nem cartão de crédito.
+Este guia deixa você com uma **URL própria que não morre** e que se atualiza
+sozinha quando você mexe no jogo.
 
-```
-npm run build
-```
-
-Isso gera a pasta `dist/` (~343 KB). **É o conteúdo dela que vai para o ar.**
-
-> **HTTPS é obrigatório.** WebRTC (a conexão entre os jogadores) e o service
-> worker só funcionam em HTTPS. Todas as opções abaixo já dão HTTPS de graça.
-> Abrir o arquivo direto (`file://`) não funciona.
+> **Por que HTTPS importa:** a conexão entre os jogadores (WebRTC) e o modo
+> offline (service worker) só funcionam em HTTPS. Todas as opções abaixo já
+> dão HTTPS de graça. Abrir o arquivo direto (`file://`) não funciona.
 
 ---
 
-## Opção 1 — Netlify Drop (mais rápido, sem conta)
+## Opção A — GitHub Pages (recomendada: atualiza sozinha)
 
-Para testar com os amigos hoje:
+Depois de configurar uma vez, **todo `git push` republica o jogo automático**.
+Já deixei o robô de publicação pronto em `.github/workflows/deploy.yml`.
 
-1. Rode `npm run build`
-2. Abra <https://app.netlify.com/drop>
-3. Arraste a pasta `dist` para a página
-4. Pronto — sai uma URL `https://algo-aleatorio.netlify.app`
+### 1. Coloque o projeto no GitHub
 
-Leva menos de um minuto. Criando conta (grátis), a URL vira permanente e você
-pode escolher o nome.
+Se você **não** mexe com git no terminal, o jeito mais fácil é o app
+**GitHub Desktop** (tem versão em português, com botões):
 
-## Opção 2 — GitHub Pages (URL permanente)
+1. Instale o GitHub Desktop e faça login na sua conta.
+2. **File → Add local repository** e aponte para a pasta do jogo.
+3. Clique em **Publish repository**. Pode deixar público. Pronto — ele cuida
+   do login e do envio sem você digitar senha nenhuma.
 
-1. Crie um repositório no GitHub
-2. No terminal, dentro da pasta do projeto:
+Se você prefere o terminal e já tem o `gh` (GitHub CLI):
 
 ```bash
-git remote add origin https://github.com/SEU-USUARIO/doce-duelo.git
-git branch -M main
-git push -u origin main
+gh auth login
+gh repo create doce-duelo --public --source=. --push
 ```
 
-3. Em **Settings → Pages**, escolha a branch `main` e a pasta `/ (root)`
+### 2. Ligue o GitHub Pages
 
-Como o `index.html` está na raiz do projeto, o Pages já funciona sem build.
-A URL fica `https://SEU-USUARIO.github.io/doce-duelo/`.
+No site do GitHub, dentro do seu repositório:
 
-O jogo foi testado servido de subpasta exatamente assim — todos os caminhos
-são relativos.
+**Settings → Pages → Build and deployment → Source: “GitHub Actions”**
 
-## Opção 3 — Cloudflare Pages / Vercel
+Só isso. Não precisa escolher branch nem pasta.
 
-Conectam direto ao repositório do GitHub. Configuração:
+### 3. Espere ~1 minuto
 
-- Comando de build: `npm run build`
-- Pasta de saída: `dist`
+Na aba **Actions** do repositório aparece a publicação rodando. Quando ficar
+verde, seu link está no ar:
+
+```
+https://SEU-USUARIO.github.io/doce-duelo/
+```
+
+Desse ponto em diante, cada mudança que você enviar (Push no GitHub Desktop,
+ou `git push`) republica sozinha.
+
+---
+
+## Opção B — Netlify (mais rápido agora, atualização manual)
+
+Se você só quer o link **hoje**, sem git:
+
+1. Rode `npm run build` (gera a pasta `dist/`).
+2. Abra <https://app.netlify.com/drop> e arraste a pasta `dist`.
+3. Sai uma URL HTTPS na hora.
+
+Criando conta grátis, a URL vira permanente e você pode dar um nome a ela. A
+desvantagem é que **cada atualização exige arrastar a `dist/` de novo** — por
+isso, se você vai continuar mexendo no jogo, a Opção A compensa mais.
+
+> Se preferir conectar o Netlify ao seu repositório do GitHub (aí ele também
+> atualiza sozinho), o arquivo `netlify.toml` já está pronto: é só apontar o
+> Netlify para o repositório.
+
+---
+
+## Se um amigo não conseguir conectar no multiplayer
+
+O jogo tenta conexão direta entre os celulares e, se a rede não deixar, cai
+para um servidor de retransmissão. Ordem do que checar:
+
+1. **Os dois estão na mesma rede?** Um no Wi-Fi e outro no 4G é o caso que
+   mais dá problema. Peça para os dois entrarem no mesmo Wi-Fi e teste.
+2. **Wi-Fi de escola ou empresa** costuma bloquear esse tipo de conexão.
+3. **O código está certo?** Ele não usa as letras `I`, `O` nem os números `0`
+   e `1`, justamente para não confundir.
+
+A mensagem de erro na tela separa "sala não encontrada" (código errado) de
+"não consegui completar a conexão" (rede bloqueando) — vale ler qual apareceu.
 
 ---
 
 ## Servidor de salas
 
-A conexão entre jogadores usa PeerJS. Por padrão ele usa o servidor público e
-gratuito do projeto — funciona, mas tem limite de uso e já saiu do ar algumas
-vezes.
-
-Para apontar para outro servidor sem mexer no código, basta a URL:
+A conexão usa o servidor público e gratuito do PeerJS. Funciona, mas tem
+limite de uso. Para apontar para outro sem mexer no código, basta a URL:
 
 ```
 https://seu-site.com/?peer=meu.servidor.com:443
 ```
 
-## Se alguém não conseguir conectar
+## Testar na sua rede sem publicar
 
-O jogo tenta conexão direta entre os celulares (mais rápido) e, se a rede não
-permitir, cai para um servidor de retransmissão. Mesmo assim algumas redes
-bloqueiam tudo.
-
-Ordem do que checar:
-
-1. **Os dois estão na mesma rede?** Wi-Fi de um e 4G do outro é o caso que mais
-   dá problema. Peça para os dois entrarem no mesmo Wi-Fi e teste de novo.
-2. **Wi-Fi corporativo ou de escola** costuma bloquear esse tipo de conexão.
-3. **O código está certo?** Sem os caracteres `I`, `O`, `0` e `1`, justamente
-   para não confundir.
-
-A mensagem de erro na tela distingue "sala não encontrada" (código errado) de
-"não consegui completar a conexão" (rede bloqueando) — vale ler qual apareceu.
-
-## Testando no celular sem publicar
-
-Para testar rápido na sua própria rede, sem subir nada:
-
-```
+```bash
 npm run dev
 ```
 
-Ele imprime o endereço de rede local (algo como `http://192.168.1.7:8080`).
-Funciona em qualquer celular no mesmo Wi-Fi.
-
-Só que **sem HTTPS o service worker não funciona**, e alguns navegadores de
-celular limitam recursos. Serve para sentir o toque e o ritmo; para testar de
-verdade com os amigos, publique.
+Imprime um endereço de rede local (`http://192.168.x.x:8080`) que abre em
+qualquer celular no mesmo Wi-Fi. Serve para sentir o toque rápido; para os
+amigos jogarem de qualquer lugar, publique (Opção A ou B).

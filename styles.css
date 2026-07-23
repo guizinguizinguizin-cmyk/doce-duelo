@@ -1514,45 +1514,31 @@ body.perigo-critico::before {
   }
 }
 
-/* ============================================ fundo de foto (mundo de doce) */
+/* ================================================== aurora de doce (fundo) */
 
-/* A ilustracao do Guilherme, desfocada em atmosfera. Substitui os orbes no
-   menu. Ken-burns lento (zoom que respira) da vida sem custo. */
-.bg-photo {
-  position: fixed;
-  inset: 0;
-  z-index: -4;
-  background: #1a0b30 url('img/menu-bg.jpg') center/cover no-repeat;
-  transform: scale(1.08);
-  animation: bgKenBurns 40s ease-in-out infinite alternate;
-  will-change: transform;
-  transition: opacity 0.6s ease;
+/* Fundo nascido da propria cara do jogo: as cores neon das pecas fluindo como
+   aurora. Nao e cenario importado — e a identidade do proprio Doce Duelo.
+   As gemas flutuando e os brilhos vem do canvas (src/render/backdrop.js). */
+
+/* Reforca as duas cores extras (verde/laranja das gemas) por cima dos tres
+   orbes originais, para a aurora ter a paleta completa das pecas. */
+.bg-fx .o4,
+.bg-fx .o5 { position: absolute; border-radius: 50%; filter: blur(70px); mix-blend-mode: screen; will-change: transform; }
+
+.bg-fx .o4 {
+  width: 58vw; height: 58vw; left: -8vw; bottom: -18vh;
+  background: radial-gradient(circle, rgba(53, 217, 139, 0.32), transparent 68%);
+  animation: orbDrift2 44s ease-in-out infinite alternate;
 }
-
-.bg-photo::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(ellipse at 50% 32%, transparent 40%, rgba(10, 4, 26, 0.5) 100%),
-    linear-gradient(180deg, rgba(20, 8, 42, 0.3) 0%, rgba(12, 5, 30, 0.55) 62%, rgba(8, 3, 22, 0.78) 100%);
+.bg-fx .o5 {
+  width: 54vw; height: 54vw; right: -6vw; bottom: 12vh;
+  background: radial-gradient(circle, rgba(255, 179, 64, 0.3), transparent 68%);
+  animation: orbDrift1 50s ease-in-out infinite alternate;
 }
-
-@keyframes bgKenBurns {
-  from { transform: scale(1.08) translate(0, 0); }
-  to { transform: scale(1.16) translate(-1.5%, -1.2%); }
-}
-
-/* Os orbes davam a cor antes; agora a foto faz isso. */
-.bg-fx { display: none; }
 
 /* Na batalha o fundo apaga: o foco e o tabuleiro. */
-body.tela-batalha .bg-photo { opacity: 0.14; animation-play-state: paused; }
-body.tela-batalha .bg-scene { opacity: 0; }
-
-@media (prefers-reduced-motion: reduce) {
-  .bg-photo { animation: none; }
-}
+body.tela-batalha .bg-fx,
+body.tela-batalha .bg-scene { opacity: 0.12; }
 
 /* --------------------------------------------------- cards de vidro (menu) */
 

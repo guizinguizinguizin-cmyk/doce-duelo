@@ -24,7 +24,7 @@ const ARQUIVOS = [
   'icon-512-maskable.png',
 ];
 
-const PASTAS = ['src', 'vendor', 'img'];
+const PASTAS = ['src', 'vendor'];
 
 async function tamanhoDe(caminho) {
   const info = await stat(caminho);

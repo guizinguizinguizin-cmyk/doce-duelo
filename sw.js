@@ -19,7 +19,6 @@ const ASSETS = [
   './manifest.json',
   './vendor/peerjs.min.js',
   './icon-192.png',
-  './img/menu-bg.jpg',
   './icon-512.png',
   './icon-512-maskable.png',
   './src/main.js',

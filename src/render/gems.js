@@ -243,6 +243,151 @@ export function drawGem(ctx, cx, cy, radius, type, special = 0, time = 0) {
   ctx.restore();
 }
 
+// ---------------------------------------------------------------------------
+// Obstaculos
+// ---------------------------------------------------------------------------
+
+/** Cor do lixo na miniatura do adversario — cinza, fora da paleta das cores. */
+export const BLOCKED_COLOR = '#6f6884';
+
+function drawPedra(ctx, cx, cy, r) {
+  ctx.save();
+  ctx.globalAlpha = 0.34;
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + r * 0.72, r * 0.8, r * 0.24, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Poligono irregular fixo: pedra nao pode "tremer" entre quadros, senao
+  // parece uma peca viva em vez de um bloco morto.
+  const pontos = [
+    [-0.86, -0.32], [-0.5, -0.84], [0.22, -0.9], [0.82, -0.4],
+    [0.9, 0.34], [0.42, 0.88], [-0.36, 0.86], [-0.9, 0.36],
+  ];
+  ctx.beginPath();
+  pontos.forEach(([px, py], i) => {
+    const x = cx + px * r;
+    const y = cy + py * r;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.closePath();
+
+  const g = ctx.createLinearGradient(cx - r, cy - r, cx + r, cy + r);
+  g.addColorStop(0, '#9a92ad');
+  g.addColorStop(0.5, '#6f6884');
+  g.addColorStop(1, '#443f56');
+  ctx.fillStyle = g;
+  ctx.fill();
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+  ctx.lineWidth = Math.max(1, r * 0.1);
+  ctx.stroke();
+
+  // Rachaduras: dao textura e reforcam que aquilo e para ser quebrado.
+  ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+  ctx.lineWidth = Math.max(1, r * 0.07);
+  ctx.beginPath();
+  ctx.moveTo(cx - r * 0.4, cy - r * 0.2);
+  ctx.lineTo(cx - r * 0.05, cy + r * 0.15);
+  ctx.lineTo(cx + r * 0.35, cy - r * 0.05);
+  ctx.stroke();
+}
+
+function drawGelo(ctx, cx, cy, r, hp) {
+  ctx.save();
+  ctx.globalAlpha = 0.3;
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + r * 0.74, r * 0.74, r * 0.22, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  const g = ctx.createLinearGradient(cx - r * 0.6, cy - r, cx + r * 0.6, cy + r);
+  g.addColorStop(0, 'rgba(200,240,255,0.95)');
+  g.addColorStop(0.5, 'rgba(120,195,235,0.9)');
+  g.addColorStop(1, 'rgba(70,140,190,0.95)');
+
+  const s = r * 0.92;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - s);
+  ctx.lineTo(cx + s, cy);
+  ctx.lineTo(cx, cy + s);
+  ctx.lineTo(cx - s, cy);
+  ctx.closePath();
+  ctx.fillStyle = g;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+  ctx.lineWidth = Math.max(1, r * 0.1);
+  ctx.stroke();
+
+  // Uma camada quebrada aparece como trinca: o jogador precisa ver de longe
+  // quantos toques ainda faltam, sem contar nada.
+  if (hp <= 1) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+    ctx.lineWidth = Math.max(1, r * 0.09);
+    ctx.beginPath();
+    ctx.moveTo(cx - r * 0.5, cy - r * 0.3);
+    ctx.lineTo(cx + r * 0.1, cy + r * 0.05);
+    ctx.lineTo(cx - r * 0.15, cy + r * 0.55);
+    ctx.moveTo(cx + r * 0.15, cy - r * 0.5);
+    ctx.lineTo(cx + r * 0.4, cy + r * 0.2);
+    ctx.stroke();
+  }
+
+  ctx.save();
+  ctx.globalAlpha = 0.55;
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.ellipse(cx - r * 0.28, cy - r * 0.36, r * 0.24, r * 0.12, -0.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+/** Corrente por cima da peca: ela continua visivel e combinavel, mas presa. */
+function drawCadeado(ctx, cx, cy, r) {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(20,14,34,0.82)';
+  ctx.lineWidth = Math.max(2, r * 0.2);
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(cx - r, cy - r * 0.35);
+  ctx.lineTo(cx + r, cy + r * 0.35);
+  ctx.moveTo(cx - r, cy + r * 0.35);
+  ctx.lineTo(cx + r, cy - r * 0.35);
+  ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(200,190,220,0.9)';
+  ctx.lineWidth = Math.max(1, r * 0.09);
+  ctx.stroke();
+
+  // Cadeado no centro
+  const s = r * 0.38;
+  ctx.fillStyle = '#cfc6e0';
+  ctx.strokeStyle = 'rgba(20,14,34,0.8)';
+  ctx.lineWidth = Math.max(1, r * 0.07);
+  ctx.beginPath();
+  ctx.arc(cx, cy - s * 0.5, s * 0.5, Math.PI, 0);
+  ctx.stroke();
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(cx - s * 0.72, cy - s * 0.16, s * 1.44, s * 1.16, s * 0.22);
+  else ctx.rect(cx - s * 0.72, cy - s * 0.16, s * 1.44, s * 1.16);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * Desenha o obstaculo de uma casa. Cadeado e sobreposicao: quem chama desenha
+ * a peca antes, porque ela continua com cor e continua combinando.
+ */
+export function drawBlocker(ctx, cx, cy, radius, tipo, hp = 1) {
+  if (tipo === 'pedra') drawPedra(ctx, cx, cy, radius);
+  else if (tipo === 'gelo') drawGelo(ctx, cx, cy, radius, hp);
+  else if (tipo === 'cadeado') drawCadeado(ctx, cx, cy, radius);
+}
+
 /** Miniatura simples para o tabuleiro dos adversarios. */
 export function drawMiniGem(ctx, x, y, size, type) {
   const gem = GEM_TYPES[type] || GEM_TYPES[0];

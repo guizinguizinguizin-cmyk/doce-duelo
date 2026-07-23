@@ -12,7 +12,17 @@
 //   npm run balance
 
 import { createRng, createMatchRandom } from '../src/core/rng.js';
-import { createGrid, allMoves, trySwap, cloneGrid, findMove, shuffleGrid, COLS } from '../src/core/board.js';
+import {
+  createGrid,
+  allMoves,
+  trySwap,
+  cloneGrid,
+  findMove,
+  shuffleGrid,
+  injectGarbage,
+  BLOCKER,
+  COLS,
+} from '../src/core/board.js';
 import { createPressure } from '../src/game/pressure.js';
 import { unitsForMove } from '../src/game/attack.js';
 import {
@@ -21,6 +31,8 @@ import {
   STREAK_TIMEOUT_MS,
   streakMultiplier,
   escalateUnits,
+  garbageForPressure,
+  PRESSURE_RELIEF_PER_GARBAGE,
 } from '../src/game/balance.js';
 import { DIFFICULTIES } from '../src/game/bot.js';
 
@@ -49,6 +61,8 @@ function criarAgente({ nome, thinkMs, skill, isBot, mistakeChance = 0 }, seed, m
     enviado: 0,
     cancelado: 0,
     recebido: 0,
+    restoDeLixo: 0,
+    lixoRecebido: 0,
   };
 }
 
@@ -89,6 +103,13 @@ function simularPartida(configA, configB, seed) {
       const entrou = agente.pressure.tick(t);
       if (entrou > 0) {
         agente.recebido += entrou;
+        // A pressao que entra tambem suja o tabuleiro, igual ao jogo.
+        const lixo = garbageForPressure(entrou, agente.restoDeLixo);
+        agente.restoDeLixo = lixo.resto;
+        if (lixo.quantidade > 0) {
+          injectGarbage(agente.grid, lixo.quantidade, BLOCKER.PEDRA, agente.boardRng);
+          agente.lixoRecebido += lixo.quantidade;
+        }
         if (agente.pressure.dead) agente.vivo = false;
       }
     }
@@ -100,6 +121,13 @@ function simularPartida(configA, configB, seed) {
     if (jogada) {
       const resultado = trySwap(atual.grid, jogada.a, jogada.b, atual.boardRng);
       if (resultado.ok && resultado.points > 0) {
+        // Obstaculo destruido devolve pressao: o caminho de volta.
+        const destruidos = resultado.phases.reduce(
+          (soma, fase) => soma + (fase.danos || []).filter((d) => d.destruido).length,
+          0
+        );
+        if (destruidos > 0) atual.pressure.relieve(destruidos * PRESSURE_RELIEF_PER_GARBAGE);
+
         if (t - atual.ultimaJogada > STREAK_TIMEOUT_MS) atual.streak = 0;
         atual.streak += 1;
         atual.ultimaJogada = t;
@@ -136,6 +164,7 @@ function rodar(rotulo, configA, configB, partidas = 300) {
   const duracoes = [];
   const enviados = [];
   const cancelados = [];
+  const lixos = [];
   let vitoriasA = 0;
   let empates = 0;
 
@@ -144,6 +173,7 @@ function rodar(rotulo, configA, configB, partidas = 300) {
     duracoes.push(duracao);
     enviados.push(a.enviado);
     cancelados.push(a.cancelado);
+    lixos.push(a.lixoRecebido);
     if (vencedor === 'a') vitoriasA += 1;
     if (vencedor === 'empate') empates += 1;
   }
@@ -163,7 +193,8 @@ function rodar(rotulo, configA, configB, partidas = 300) {
       `mediana ${seg(percentil(duracoes, 0.5)).padStart(5)}  ` +
       `p90 ${seg(percentil(duracoes, 0.9)).padStart(5)}  ` +
       `enviou ${enviadoMedio.toFixed(0).padStart(3)}u  ` +
-      `cancelou ${taxaCancel.toFixed(0).padStart(2)}%` +
+      `cancelou ${taxaCancel.toFixed(0).padStart(2)}%  ` +
+      `lixo ${media(lixos).toFixed(0).padStart(2)}` +
       (empates ? `  ARRASTADAS ${empates}` : '')
   );
 }

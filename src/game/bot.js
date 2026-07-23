@@ -8,9 +8,25 @@
 // Isso importa porque um bot que trapaceia e obvio em dez segundos e o jogador
 // para de levar o modo solo a serio.
 
-import { createGrid, allMoves, trySwap, cloneGrid, findMove, shuffleGrid, serializeTypes, COLS } from '../core/board.js';
+import {
+  createGrid,
+  allMoves,
+  trySwap,
+  cloneGrid,
+  findMove,
+  shuffleGrid,
+  serializeTypes,
+  injectGarbage,
+  BLOCKER,
+  COLS,
+} from '../core/board.js';
 import { createRng, createMatchRandom } from '../core/rng.js';
-import { STREAK_TIMEOUT_MS, streakMultiplier } from './balance.js';
+import {
+  STREAK_TIMEOUT_MS,
+  streakMultiplier,
+  garbageForPressure,
+  PRESSURE_RELIEF_PER_GARBAGE,
+} from './balance.js';
 import { createPressure } from './pressure.js';
 import { unitsForMove } from './attack.js';
 
@@ -84,6 +100,7 @@ export function createBot({ id, name, difficulty = 'normal', brainSeed, hooks = 
   let timer = null;
   let comboStreak = 0;
   let lastMoveAt = 0;
+  let restoDeLixo = 0;
 
   /**
    * Avalia uma jogada simulando-a numa copia. Devolve os pontos que ela renderia.
@@ -158,6 +175,13 @@ export function createBot({ id, name, difficulty = 'normal', brainSeed, hooks = 
 
         // Mesma tabela de ataque do jogador, e o mesmo modulo de pressao:
         // o bot tambem cancela o que esta chegando antes de atacar.
+        // Obstaculo destruido devolve pressao, exatamente como para o jogador.
+        const destruidos = result.phases.reduce(
+          (soma, fase) => soma + (fase.danos || []).filter((d) => d.destruido).length,
+          0
+        );
+        if (destruidos > 0) pressure.relieve(destruidos * PRESSURE_RELIEF_PER_GARBAGE);
+
         const units = unitsForMove(result, comboStreak);
         const { sobra } = pressure.spend(units);
 
@@ -209,6 +233,12 @@ export function createBot({ id, name, difficulty = 'normal', brainSeed, hooks = 
       if (!alive) return;
       const entrou = pressure.tick(now);
       if (entrou > 0) {
+        // O bot suja o proprio tabuleiro pela mesma regra do jogador. Se ele
+        // jogasse limpo enquanto o outro enche de pedra, o modo solo mentiria.
+        const { quantidade, resto } = garbageForPressure(entrou, restoDeLixo);
+        restoDeLixo = resto;
+        if (quantidade > 0) injectGarbage(grid, quantidade, BLOCKER.PEDRA, boardRng);
+
         emitState();
         if (pressure.dead) {
           alive = false;
@@ -227,6 +257,7 @@ export function createBot({ id, name, difficulty = 'normal', brainSeed, hooks = 
       score = 0;
       alive = true;
       comboStreak = 0;
+      restoDeLixo = 0;
       emitState();
     },
 

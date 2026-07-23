@@ -117,3 +117,36 @@ export function escalateUnits(units, elapsedMs) {
   if (units <= 0) return 0;
   return Math.max(1, Math.floor(units * escalation(elapsedMs)));
 }
+
+// ---------------------------------------------------------------------------
+// Lixo (obstaculos que o ataque deposita no tabuleiro)
+// ---------------------------------------------------------------------------
+
+/**
+ * Quantas unidades de pressao que ENTRARAM valem um obstaculo.
+ *
+ * Numero alto de proposito. O obstaculo e uma segunda punicao pelo mesmo
+ * ataque, e empilhar lixo em quem ja esta perdendo trabalha contra o pilar de
+ * "sempre existe chance de virar": quanto pior a sua situacao, menos jogadas
+ * voce tem para reagir. A taxa baixa mantem o lixo como uma presenca que
+ * incomoda, nao como uma bola de neve.
+ */
+export const GARBAGE_PER_PRESSURE = 4;
+
+/**
+ * Cada obstaculo destruido devolve esta pressao.
+ *
+ * E a valvula de contra-jogo: o lixo no seu tabuleiro nao e so estorvo, e
+ * tambem pressao que voce pode remover. Sem isso, receber lixo seria dano
+ * puro sem resposta, e o jogador nao teria caminho de volta.
+ */
+export const PRESSURE_RELIEF_PER_GARBAGE = 1;
+
+/** Quantos obstaculos nascem de uma leva de pressao que acabou de entrar. */
+export function garbageForPressure(unidadesQueEntraram, acumuladoAnterior = 0) {
+  const total = acumuladoAnterior + unidadesQueEntraram;
+  return {
+    quantidade: Math.floor(total / GARBAGE_PER_PRESSURE),
+    resto: total % GARBAGE_PER_PRESSURE,
+  };
+}

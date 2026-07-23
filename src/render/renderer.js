@@ -8,7 +8,7 @@
 // que a logica ja desfez.
 
 import { COLS, ROWS, CELL_COUNT, idx, rowOf, colOf } from '../core/board.js';
-import { drawGem, GEM_TYPES } from './gems.js';
+import { drawGem, drawBlocker, GEM_TYPES } from './gems.js';
 import { createParticleSystem } from './particles.js';
 
 const BOARD_PAD = 10;
@@ -170,6 +170,7 @@ export function createRenderer(canvas, options = {}) {
       id: cell.id,
       type: cell.type,
       special: cell.special,
+      blocker: cell.blocker ? { ...cell.blocker } : null,
       col,
       row,
       scale: 1,
@@ -451,6 +452,52 @@ export function createRenderer(canvas, options = {}) {
       });
     }
 
+    // 1b. Obstaculos atingidos: tremem, soltam lasca, e somem se acabaram.
+    const danoSpecs = [];
+    for (const dano of phase.danos || []) {
+      const sprite = cellSprites[dano.index];
+      if (!sprite) continue;
+
+      const x = cellX(colOf(dano.index));
+      const y = cellY(rowOf(dano.index));
+      const cor = dano.tipo === 'gelo' ? '#bfe9ff' : dano.tipo === 'cadeado' ? '#cfc6e0' : '#9a92ad';
+      particles.emit({
+        x,
+        y,
+        count: reducedMotion ? 3 : dano.destruido ? 18 : 9,
+        color: cor,
+        speed: dano.destruido ? 300 : 190,
+        size: cellSize * 0.15,
+        life: 0.5,
+      });
+
+      if (dano.destruido) {
+        if (dano.tipo === 'cadeado') {
+          // A peca sobrevive: some so a corrente.
+          sprite.blocker = null;
+        } else {
+          cellSprites[dano.index] = null;
+          danoSpecs.push({
+            target: sprite,
+            to: { scale: 0, alpha: 0 },
+            duration: scale(TIMING.pop),
+            ease: easeInQuad,
+            onComplete: () => sprites.delete(sprite.id),
+          });
+        }
+      } else if (sprite.blocker) {
+        sprite.blocker = { ...sprite.blocker, hp: dano.hp };
+        // Tranco curto: comunica "levou, mas aguentou".
+        sprite.scale = 1.18;
+        danoSpecs.push({
+          target: sprite,
+          to: { scale: 1 },
+          duration: scale(220),
+          ease: easeOutBack,
+        });
+      }
+    }
+
     // 2. Especiais que nascem (a peca sobrevive e se transforma)
     const morphSpecs = [];
     for (const created of phase.created) {
@@ -471,7 +518,7 @@ export function createRenderer(canvas, options = {}) {
       particles.emit({ x, y, count: reducedMotion ? 4 : 22, color: '#ffffff', speed: 300, size: cellSize * 0.13, life: 0.55, shape: 'circle' });
     }
 
-    await runTweens([...popSpecs, ...morphSpecs]);
+    await runTweens([...popSpecs, ...danoSpecs, ...morphSpecs]);
 
     // 3. Queda das pecas que sobraram
     const fallSpecs = [];
@@ -495,6 +542,7 @@ export function createRenderer(canvas, options = {}) {
         id: spawn.id,
         type: spawn.type,
         special: 0,
+        blocker: null,
         col: colOf(spawn.to),
         row: rowOf(spawn.to) - spawn.height - 0.6,
         scale: 1,
@@ -632,7 +680,15 @@ export function createRenderer(canvas, options = {}) {
         ctx.fill();
         ctx.restore();
       }
-      drawGem(ctx, x, y, radius, sprite.type, sprite.special, time);
+      if (sprite.blocker && sprite.blocker.tipo !== 'cadeado') {
+        // Pedra e gelo ocupam a casa: nao ha peca por baixo.
+        drawBlocker(ctx, x, y, radius, sprite.blocker.tipo, sprite.blocker.hp);
+      } else {
+        drawGem(ctx, x, y, radius, sprite.type, sprite.special, time);
+        // Cadeado e sobreposicao: a cor tem de continuar legivel, porque a
+        // peca ainda combina.
+        if (sprite.blocker) drawBlocker(ctx, x, y, radius, 'cadeado', sprite.blocker.hp);
+      }
       ctx.restore();
     }
   }

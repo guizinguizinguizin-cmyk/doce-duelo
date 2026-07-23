@@ -25,6 +25,8 @@ import {
   STREAK_TIMEOUT_MS,
   streakMultiplier,
   escalateUnits,
+  garbageForPressure,
+  PRESSURE_RELIEF_PER_GARBAGE,
 } from './balance.js';
 
 export { PRESSURE_MAX };
@@ -49,6 +51,8 @@ export function createSession(hooks = {}) {
   let tickTimer = null;
   let matchSeed = 0;
   let recorder = null;
+  // Sobra de pressao que ainda nao completou um obstaculo.
+  let restoDeLixo = 0;
   // Gerador dedicado as DECISOES do duelo (desempate de alvo). Semeado a partir
   // da semente da partida, para o replay reproduzir as mesmas escolhas.
   let duelRng = createRng(0);
@@ -414,6 +418,13 @@ export function createSession(hooks = {}) {
       if (pressure.current > stats.peakPressure) stats.peakPressure = pressure.current;
       syncLocalIntoRoster();
       emit('onPressureLanded', entrou, pressure.current, pressure.alert);
+
+      // A pressao que entrou tambem suja o tabuleiro. Quem desenha decide
+      // quando aplicar (nao pode ser no meio de uma cascata).
+      const { quantidade, resto } = garbageForPressure(entrou, restoDeLixo);
+      restoDeLixo = resto;
+      if (quantidade > 0) emit('onGarbage', quantidade);
+
       broadcastLocalState();
 
       if (pressure.dead) {
@@ -569,6 +580,7 @@ export function createSession(hooks = {}) {
     comboStreak = 0;
     lastScoringMove = 0;
     matchStartedAt = Date.now();
+    restoDeLixo = 0;
     Object.assign(stats, {
       bestCombo: 0,
       bestCascade: 0,
@@ -601,6 +613,19 @@ export function createSession(hooks = {}) {
     emit('onStart', semente);
   }
 
+  /**
+   * Obstaculos destruidos devolvem pressao. E o caminho de volta: o lixo no
+   * seu tabuleiro nao e so estorvo, e pressao removivel.
+   */
+  function relieveFromGarbage(quantidade) {
+    if (!active || quantidade <= 0) return 0;
+    const alivio = quantidade * PRESSURE_RELIEF_PER_GARBAGE;
+    pressure.relieve(alivio);
+    syncLocalIntoRoster();
+    broadcastLocalState();
+    return alivio;
+  }
+
   /** Chamado quando a contagem regressiva acaba e o tabuleiro fica jogavel. */
   function launchBots() {
     matchStartedAt = Date.now();
@@ -620,6 +645,7 @@ export function createSession(hooks = {}) {
     removeNetworkPlayer,
     handleMessage,
     reportLocalMove,
+    relieveFromGarbage,
     broadcastLocalState,
 
     /** Replay da ultima partida solo, ou null. Ja vem conferido. */

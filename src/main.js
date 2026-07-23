@@ -12,6 +12,9 @@ import {
   findMove,
   shuffleGrid,
   serializeTypes,
+  injectGarbage,
+  isBlocked,
+  BLOCKER,
   areAdjacent,
   rowOf,
   colOf,
@@ -21,7 +24,7 @@ import {
   CELL_COUNT,
 } from './core/board.js';
 import { createRenderer } from './render/renderer.js';
-import { GEM_COLORS } from './render/gems.js';
+import { GEM_COLORS, BLOCKED_COLOR } from './render/gems.js';
 import { createAudio } from './audio/audio.js';
 import { createSession } from './game/session.js';
 import { PRESSURE_MAX, streakMultiplier } from './game/balance.js';
@@ -119,6 +122,9 @@ let busy = false; // uma animacao de jogada esta em andamento
 let selected = null;
 let drag = null;
 let idleTimer = null;
+// Lixo que chegou enquanto uma cascata rodava. Aplicar no meio da animacao
+// dessincronizaria o espelho visual do renderer com o tabuleiro.
+let lixoPendente = 0;
 
 let soloConfig = { difficulty: 'normal', opponents: 1 };
 let onlineConfig = { maxPlayers: 2 };
@@ -261,7 +267,11 @@ function renderOpponents(roster) {
 
     if (player.boardTypes) {
       for (let i = 0; i < CELL_COUNT; i++) {
-        refs.cells[i].style.background = GEM_COLORS[player.boardTypes[i]] || '#2b1a52';
+        // O codigo acima da faixa de cores e lixo: quem assiste precisa ver
+        // o tabuleiro do adversario sujando.
+        const codigo = player.boardTypes[i];
+        refs.cells[i].style.background =
+          codigo >= GEM_COLORS.length ? BLOCKED_COLOR : GEM_COLORS[codigo] || '#2b1a52';
       }
     }
   }
@@ -352,6 +362,7 @@ function updateDebugPanel() {
     `projetado ${session.pressure + session.pending}`,
     `alerta    ${session.alert}`,
     `combo     x${session.comboStreak}`,
+    `lixo      ${grid.filter(isBlocked).length}`,
     `placar    ${session.localScore}`,
     `vivos     ${session.aliveCount}`,
   ];
@@ -414,6 +425,28 @@ async function playPhases(phases) {
   }
 }
 
+/**
+ * Deposita o lixo acumulado no tabuleiro.
+ *
+ * So roda com o tabuleiro parado: mexer no grid durante uma cascata deixaria
+ * o espelho visual do renderer descrevendo um tabuleiro que nao existe mais.
+ */
+function aplicarLixo() {
+  if (lixoPendente <= 0 || !session || !session.active) return;
+  const quantidade = lixoPendente;
+  lixoPendente = 0;
+
+  const colocados = injectGarbage(grid, quantidade, BLOCKER.PEDRA, rng);
+  if (!colocados.length) return;
+
+  renderer.setGrid(grid);
+  renderer.shake(6 + colocados.length * 1.5);
+  audio.play('wrapped');
+  announce(`${colocados.length} obstáculo(s) caíram no seu tabuleiro`);
+  el.battleHint.textContent = 'Combine ao lado das pedras para quebrá-las';
+  session.broadcastLocalState();
+}
+
 async function attemptMove(a, b) {
   if (busy || !session || !session.active) return;
   if (!areAdjacent(a, b)) return;
@@ -436,6 +469,17 @@ async function attemptMove(a, b) {
   audio.play('swap');
   await renderer.animateSwap(a, b);
   await playPhases(result.phases);
+
+  // Obstaculo destruido devolve pressao: e o caminho de volta de quem esta
+  // sob lixo. Contado antes de pontuar, para o alivio ja valer nesta jogada.
+  const destruidos = result.phases.reduce(
+    (soma, fase) => soma + (fase.danos || []).filter((d) => d.destruido).length,
+    0
+  );
+  if (destruidos > 0) {
+    const alivio = session.relieveFromGarbage(destruidos);
+    if (alivio > 0) renderer.floatText(`-${alivio} pressão`, idx(1, 4), '#8fe3ff');
+  }
 
   const info = session.reportLocalMove(result, a, b);
   if (info) {
@@ -463,6 +507,8 @@ async function attemptMove(a, b) {
   }
 
   busy = false;
+  // O lixo que chegou durante a animacao entra agora.
+  aplicarLixo();
 }
 
 // ---------------------------------------------------------------------------
@@ -574,6 +620,11 @@ function createSessionWithHooks() {
       announce(`Chegando: ${units} de pressão. Faça um combo para cancelar!`);
     },
 
+    onGarbage: (quantidade) => {
+      lixoPendente += quantidade;
+      if (!busy) aplicarLixo();
+    },
+
     // Pendente venceu e virou pressao de verdade. Agora sim doi.
     onPressureLanded: (units) => {
       updatePressureUI();
@@ -656,6 +707,7 @@ function beginBattle(semente) {
 
   busy = false;
   selected = null;
+  lixoPendente = 0;
 
   el.myNameLabel.textContent = storage.name || 'Você';
   updateScoreUI(false);

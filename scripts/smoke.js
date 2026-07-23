@@ -242,9 +242,36 @@ try {
   await pagina.locator('#btnStartSolo').click();
   await pagina.waitForSelector('#screenBattle:not(.hidden)', { timeout: 12000 });
 
+  // Vigia a contagem de lixo no painel tecnico enquanto a partida corre.
+  // O tabuleiro do jogador e canvas, entao nao da para inspecionar pelo DOM —
+  // e e nele que o lixo cai, porque este teste joga mal de proposito.
+  let viuLixo = 0;
+  await pagina.evaluate(() => {
+    // Garante o painel aberto para o teste conseguir ler a contagem.
+    if (document.getElementById('debugPanel').classList.contains('hidden')) {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'd' }));
+    }
+  });
+  const vigia = setInterval(async () => {
+    try {
+      const texto = await pagina.locator('#debugPanel').innerText();
+      const achou = /lixo\s+(\d+)/.exec(texto);
+      if (achou) {
+        const n = Number(achou[1]);
+        if (n > viuLixo) {
+          viuLixo = n;
+          if (n >= 4) await pagina.screenshot({ path: 'scripts/.saida/lixo.png' });
+        }
+      }
+    } catch {
+      /* pagina navegou */
+    }
+  }, 900);
+
   const fim = await pagina
     .waitForSelector('#screenGameOver:not(.hidden)', { timeout: 180000 })
     .then(() => true, () => false);
+  clearInterval(vigia);
 
   if (fim) {
     ok('partida solo chegou ao fim');
@@ -259,6 +286,16 @@ try {
   }
 
   await pagina.screenshot({ path: 'scripts/.saida/fim.png' });
+
+  // ---- o lixo aparece no tabuleiro? ----
+  // Contra o bot mais forte a partida acabou de terminar, entao ambos os lados
+  // levaram pressao. O mini-tabuleiro do adversario e inspecionavel pelo DOM:
+  // celula cinza (fora da paleta das cores) e obstaculo.
+  if (viuLixo) {
+    ok(`obstaculos cairam no tabuleiro durante a partida (pico de ${viuLixo})`);
+  } else {
+    falhar('nenhum obstaculo apareceu, apesar de a partida ter ido ate o colapso');
+  }
 
   if (errosConsole.length) {
     falhar(`${errosConsole.length} erro(s) de console:`);

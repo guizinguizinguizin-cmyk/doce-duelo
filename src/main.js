@@ -24,7 +24,8 @@ import {
   CELL_COUNT,
 } from './core/board.js';
 import { createRenderer } from './render/renderer.js';
-import { GEM_COLORS, BLOCKED_COLOR } from './render/gems.js';
+import { GEM_COLORS, BLOCKED_COLOR, drawGem } from './render/gems.js';
+import { ICONES, aplicarIcones } from './render/icons.js';
 import { createAudio } from './audio/audio.js';
 import { createSession } from './game/session.js';
 import { PRESSURE_MAX, streakMultiplier } from './game/balance.js';
@@ -176,7 +177,7 @@ function applySettings() {
   if (s.debug !== debugLigado) setDebug(!!s.debug);
   el.btnHint.classList.toggle('hidden', !s.hints);
 
-  el.soundIcon.textContent = s.muted ? '🔇' : '🔊';
+  el.soundIcon.innerHTML = s.muted ? ICONES.somMudo : ICONES.somLigado;
   el.soundBtn.classList.toggle('muted', s.muted);
   el.soundBtn.setAttribute('aria-pressed', String(!s.muted));
 }
@@ -1331,20 +1332,38 @@ document.addEventListener('visibilitychange', () => {
 // Inicializacao
 // ---------------------------------------------------------------------------
 
+/**
+ * Gemas flutuantes do menu, desenhadas pela MESMA funcao do tabuleiro.
+ *
+ * Antes eram quadradinhos de CSS, o que escondia justamente o que o jogo tem
+ * de proprio: cada tipo tem uma FORMA, nao so uma cor. Reusar drawGem garante
+ * que menu e tabuleiro nunca divirjam — mudar a arte das pecas muda as duas.
+ */
 function buildHeroGems() {
   el.heroGems.innerHTML = '';
-  GEM_COLORS.slice(0, 5).forEach((color, i) => {
-    const gem = document.createElement('div');
-    gem.className = 'hero-gem';
-    gem.style.background = `linear-gradient(145deg, ${color}, ${color}88)`;
-    gem.style.animationDelay = i * 0.16 + 's';
-    el.heroGems.appendChild(gem);
-  });
+  const lado = 40;
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+
+  for (let tipo = 0; tipo < 5; tipo++) {
+    const canvas = document.createElement('canvas');
+    canvas.className = 'hero-gem';
+    canvas.width = lado * dpr;
+    canvas.height = lado * dpr;
+    canvas.style.animationDelay = tipo * 0.16 + 's';
+
+    const c = canvas.getContext('2d');
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawGem(c, lado / 2, lado / 2, lado * 0.36, tipo, 0, 0);
+
+    el.heroGems.appendChild(canvas);
+  }
 }
 
 function boot() {
   if (!storage.name) storage.setName(suggestName());
 
+  // Antes de applySettings: ela ja troca o icone de som conforme o estado.
+  aplicarIcones();
   applySettings();
   buildHeroGems();
   buildDifficultyButtons();

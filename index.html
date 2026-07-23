@@ -25,7 +25,7 @@
     <h1>Doce Duelo</h1>
   </div>
   <button id="btnSound" class="icon-btn" aria-label="Ligar ou desligar o som" aria-pressed="false">
-    <span id="soundIcon">🔊</span>
+    <span id="soundIcon" data-icone="somLigado"></span>
   </button>
 </header>
 
@@ -39,7 +39,7 @@
     </div>
 
     <button id="btnPlaySolo" class="menu-btn primary">
-      <span class="menu-btn-icon">🤖</span>
+      <span class="menu-btn-icon" data-icone="solo"></span>
       <span class="menu-btn-text">
         <strong>Jogar sozinho</strong>
         <small>Contra a máquina, sem precisar de internet</small>
@@ -47,7 +47,7 @@
     </button>
 
     <button id="btnPlayOnline" class="menu-btn">
-      <span class="menu-btn-icon">👥</span>
+      <span class="menu-btn-icon" data-icone="amigos"></span>
       <span class="menu-btn-text">
         <strong>Jogar com amigos</strong>
         <small>Até 4 pessoas, cada uma no seu celular</small>
@@ -56,17 +56,17 @@
 
     <div class="menu-row">
       <button id="btnStats" class="menu-btn small">
-        <span class="menu-btn-icon">📊</span>
+        <span class="menu-btn-icon" data-icone="estatisticas"></span>
         <span class="menu-btn-text"><strong>Estatísticas</strong></span>
       </button>
       <button id="btnSettings" class="menu-btn small">
-        <span class="menu-btn-icon">⚙️</span>
+        <span class="menu-btn-icon" data-icone="ajustes"></span>
         <span class="menu-btn-text"><strong>Ajustes</strong></span>
       </button>
     </div>
 
     <button id="btnEditName" class="name-chip">
-      Jogando como <strong id="menuPlayerName">—</strong> <span class="pencil">✏️</span>
+      Jogando como <strong id="menuPlayerName">—</strong> <span class="pencil" data-icone="editar"></span>
     </button>
   </section>
 
@@ -163,8 +163,8 @@
           <span id="comboBadge" class="combo-badge hidden"></span>
         </div>
         <div class="battle-actions">
-          <button id="btnHint" class="icon-btn small" aria-label="Mostrar uma dica">💡</button>
-          <button id="btnQuit" class="icon-btn small" aria-label="Sair da partida">✕</button>
+          <button id="btnHint" class="icon-btn small" aria-label="Mostrar uma dica" data-icone="dica"></button>
+          <button id="btnQuit" class="icon-btn small" aria-label="Sair da partida" data-icone="sair"></button>
         </div>
       </div>
 

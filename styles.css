@@ -306,13 +306,13 @@ main {
   margin-bottom: 12px;
 }
 
-/* Peca flutuante do menu: mesma paleta do canvas, definida em src/render/gems.js */
+/* Peca flutuante do menu: um <canvas> desenhado pela mesma funcao do
+   tabuleiro (ver buildHeroGems em src/main.js), para as formas nunca
+   divergirem entre menu e partida. */
 .hero-gem {
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
+  width: 40px;
+  height: 40px;
   animation: gemFloat 2.6s ease-in-out infinite;
-  box-shadow: inset 0 -5px 10px rgba(0, 0, 0, 0.32), 0 4px 12px rgba(0, 0, 0, 0.35);
 }
 
 @keyframes gemFloat {
@@ -1043,7 +1043,7 @@ input[type='checkbox'] {
 
 @media (min-width: 560px) {
   .brand h1 { font-size: 1.5rem; }
-  .hero-gem { width: 36px; height: 36px; }
+  .hero-gem { width: 46px; height: 46px; }
 }
 
 /* ------------------------------------------------------- painel tecnico */
@@ -1071,3 +1071,52 @@ input[type='checkbox'] {
 
 .debug-panel b { color: var(--cyan); font-weight: 700; }
 .debug-panel .alerta { color: var(--danger); }
+
+/* ------------------------------------------------------------- icones SVG */
+
+/* Desenhados em src/render/icons.js e injetados na inicializacao. Emoji foi
+   descartado pelo mesmo motivo das pecas do tabuleiro: cada aparelho desenha
+   o seu, e nenhum combina com o resto do jogo. */
+
+.menu-btn-icon svg {
+  width: 26px;
+  height: 26px;
+  display: block;
+}
+
+.icon-btn svg {
+  width: 21px;
+  height: 21px;
+  display: block;
+}
+
+.icon-btn.small svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* O X de sair herda a cor do texto; os demais trazem a propria paleta. */
+.icon-btn[data-icone='sair'] { color: var(--text-dim); }
+.icon-btn[data-icone='sair']:active { color: var(--danger); }
+
+/* O tile do menu ganha um brilho suave atras do icone, para ele nao ficar
+   flutuando num quadrado morto. */
+.menu-btn-icon {
+  position: relative;
+  overflow: hidden;
+}
+
+.menu-btn-icon::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 120%, rgba(255, 255, 255, 0.14), transparent 70%);
+  pointer-events: none;
+}
+
+.pencil svg {
+  width: 15px;
+  height: 15px;
+  display: inline-block;
+  vertical-align: -2px;
+}

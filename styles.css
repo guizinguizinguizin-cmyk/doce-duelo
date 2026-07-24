@@ -41,6 +41,11 @@ body {
   padding: 0;
   min-height: 100%;
   overscroll-behavior: none;
+  /* Mesma cor do FIM do degrade do body. Quando a barra do navegador some no
+     celular, o viewport cresce e sobraria uma tira sem cor embaixo (o fundo
+     do body e 'fixed'); pintando o html com esse tom, a tira fica invisivel —
+     some a "borda de navegador". */
+  background: var(--bg-deep);
 }
 
 body {

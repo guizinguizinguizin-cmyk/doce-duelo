@@ -5,149 +5,124 @@
 // sao tres desenhos diferentes, e nenhum deles combina com o resto do jogo.
 // Desenhado aqui, fica igual em todo lugar e conversa com a paleta das gemas.
 //
-// Todos usam a mesma linguagem: caixa 24x24, traco arredondado de ~1.8, formas
-// geometricas simples. Icone com detalhe demais vira mancha a 24 pixels.
+// Linguagem visual: caixa 24x24, formas CHEIAS e arredondadas com um degrade
+// da propria cor (claro -> escuro) e um brilho branco discreto. Nada de tracos
+// finos que somem a 26px — silhueta grossa que le de longe.
 
 const PALETA = {
   rosa: '#ff4d8d',
   rosaEscuro: '#ff2d78',
+  rosaClaro: '#ff85a9',
   ciano: '#45d9ff',
+  cianoClaro: '#8fe8ff',
+  cianoEscuro: '#2b7fd4',
   ambar: '#ffb340',
+  ambarClaro: '#ffe08a',
   verde: '#35d98b',
   roxo: '#b45cff',
-  escuro: '#1c1038',
+  roxoClaro: '#d7a3ff',
+  escuro: '#0e1030',
 };
 
 const svg = (conteudo, extra = '') =>
   `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" ` +
   `aria-hidden="true" focusable="false" ${extra}>${conteudo}</svg>`;
 
-/** Jogar sozinho: cabeca de robo. Silhueta bem distinta ate pequena. */
+/** Degrade linear reutilizavel. */
+const grad = (id, c1, c2, x1 = 4, y1 = 3, x2 = 20, y2 = 21) =>
+  `<linearGradient id="${id}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" gradientUnits="userSpaceOnUse">` +
+  `<stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c2}"/></linearGradient>`;
+
+/** Jogar sozinho: cabeca de robo, cheia e amigavel. */
 const solo = svg(`
-  <path d="M12 2.8v2.6" stroke="${PALETA.ciano}" stroke-width="1.8" stroke-linecap="round"/>
-  <circle cx="12" cy="2" r="1.5" fill="${PALETA.ciano}"/>
-  <path d="M3.6 10.5H2.4v3.2h1.2M20.4 10.5h1.2v3.2h-1.2"
-        stroke="${PALETA.ciano}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-  <rect x="3.6" y="5.4" width="16.8" height="14" rx="4.6"
-        fill="url(#gradRobo)" stroke="rgba(255,255,255,.28)" stroke-width="1"/>
-  <circle cx="9" cy="11.4" r="1.9" fill="${PALETA.escuro}"/>
-  <circle cx="15" cy="11.4" r="1.9" fill="${PALETA.escuro}"/>
-  <circle cx="9.6" cy="10.8" r="0.6" fill="#fff"/>
-  <circle cx="15.6" cy="10.8" r="0.6" fill="#fff"/>
-  <path d="M9.2 15.8h5.6" stroke="${PALETA.escuro}" stroke-width="1.7" stroke-linecap="round"/>
-  <defs>
-    <linearGradient id="gradRobo" x1="4" y1="5" x2="20" y2="19">
-      <stop offset="0" stop-color="${PALETA.ciano}"/>
-      <stop offset="1" stop-color="#2b7fd4"/>
-    </linearGradient>
-  </defs>
+  <path d="M12 2.2v3.2" stroke="${PALETA.cianoClaro}" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="12" cy="2" r="1.7" fill="${PALETA.cianoClaro}"/>
+  <rect x="2.1" y="10.3" width="2.3" height="4.4" rx="1.15" fill="${PALETA.cianoEscuro}"/>
+  <rect x="19.6" y="10.3" width="2.3" height="4.4" rx="1.15" fill="${PALETA.cianoEscuro}"/>
+  <rect x="3.9" y="5.6" width="16.2" height="14" rx="5.4" fill="url(#gSolo)"/>
+  <path d="M3.9 11c0-3 2.4-5.4 5.4-5.4h5.4c3 0 5.4 2.4 5.4 5.4z" fill="#fff" opacity=".14"/>
+  <rect x="7" y="10.1" width="3.7" height="4.4" rx="1.85" fill="${PALETA.escuro}"/>
+  <rect x="13.3" y="10.1" width="3.7" height="4.4" rx="1.85" fill="${PALETA.escuro}"/>
+  <circle cx="8.85" cy="11.5" r="0.95" fill="#fff"/>
+  <circle cx="15.15" cy="11.5" r="0.95" fill="#fff"/>
+  <path d="M9.4 17.1h5.2" stroke="${PALETA.escuro}" stroke-width="1.9" stroke-linecap="round"/>
+  <defs>${grad('gSolo', PALETA.cianoClaro, PALETA.cianoEscuro, 4, 5, 20, 20)}</defs>
 `);
 
-/**
- * Jogar com amigos: duas pessoas, uma na frente da outra.
- *
- * Duas figuras humanas leem melhor que dois tabuleiros ou dois controles —
- * qualquer pessoa entende em meio segundo, sem precisar aprender o simbolo.
- */
+/** Jogar com amigos: duas pessoas, uma na frente da outra. */
 const amigos = svg(`
-  <circle cx="16.2" cy="8.4" r="3" fill="${PALETA.ciano}" opacity=".75"/>
-  <path d="M11.4 19.4c0-2.7 2.2-4.8 4.8-4.8s4.8 2.1 4.8 4.8"
-        fill="${PALETA.ciano}" opacity=".75"/>
-  <circle cx="8.6" cy="7.6" r="3.6" fill="url(#gradAmigo)"/>
-  <path d="M2.6 19.8c0-3.3 2.7-5.9 6-5.9s6 2.6 6 5.9"
-        fill="url(#gradAmigo)"/>
-  <defs>
-    <linearGradient id="gradAmigo" x1="3" y1="4" x2="15" y2="20">
-      <stop offset="0" stop-color="${PALETA.rosa}"/>
-      <stop offset="1" stop-color="${PALETA.rosaEscuro}"/>
-    </linearGradient>
-  </defs>
+  <circle cx="15.6" cy="8.4" r="3.1" fill="${PALETA.ciano}"/>
+  <path d="M9.6 20a6 6 0 0112 0z" fill="${PALETA.ciano}"/>
+  <circle cx="8.4" cy="7.9" r="3.7" fill="url(#gAmi)"/>
+  <path d="M1.8 20.8a6.6 6.6 0 0113.2 0z" fill="url(#gAmi)"/>
+  <ellipse cx="7" cy="6.6" rx="1.3" ry="0.8" fill="#fff" opacity=".3"/>
+  <defs>${grad('gAmi', PALETA.rosaClaro, PALETA.rosaEscuro, 2, 4, 15, 21)}</defs>
 `);
 
-/** Estatisticas: barras subindo, com a maior coroada por uma gema. */
+/** Ranking mundial: trofeu robusto com estrela. */
+const trofeu = svg(`
+  <path d="M6 3.6h12V8a6 6 0 01-12 0z" fill="url(#gTro)"/>
+  <path d="M6 5.3H3.4v1.6a3 3 0 003 3M18 5.3h2.6v1.6a3 3 0 01-3 3"
+        stroke="${PALETA.ambar}" stroke-width="1.7" fill="none" stroke-linecap="round"/>
+  <rect x="10.5" y="12.4" width="3" height="3.4" fill="${PALETA.ambar}"/>
+  <path d="M7 20.6h10l-1.1-2.4a1.6 1.6 0 00-1.5-.95H9.6a1.6 1.6 0 00-1.5.95z" fill="url(#gTro)"/>
+  <path d="M12 5.1l1.05 2.13 2.35.34-1.7 1.66.4 2.34L12 10.8l-2.1 1.1.4-2.34-1.7-1.66 2.35-.34z" fill="#fff" opacity=".85"/>
+  <defs>${grad('gTro', PALETA.ambarClaro, PALETA.ambar, 6, 3, 18, 21)}</defs>
+`);
+
+/** Estatisticas: barras arredondadas subindo, com um brilho no topo. */
 const estatisticas = svg(`
-  <rect x="3" y="13.5" width="4.4" height="7.5" rx="1.6" fill="${PALETA.roxo}" opacity=".85"/>
-  <rect x="9.8" y="9.5" width="4.4" height="11.5" rx="1.6" fill="${PALETA.ciano}" opacity=".9"/>
-  <rect x="16.6" y="5.5" width="4.4" height="15.5" rx="1.6" fill="url(#gradBarra)"/>
-  <path d="M18.8 1.6l1.5 1.6-1.5 1.6-1.5-1.6z" fill="${PALETA.ambar}"/>
-  <defs>
-    <linearGradient id="gradBarra" x1="17" y1="5" x2="21" y2="21">
-      <stop offset="0" stop-color="${PALETA.ambar}"/>
-      <stop offset="1" stop-color="${PALETA.rosa}"/>
-    </linearGradient>
-  </defs>
+  <rect x="2.8" y="12.8" width="4.7" height="8.4" rx="2.1" fill="${PALETA.roxo}"/>
+  <rect x="9.65" y="8.8" width="4.7" height="12.4" rx="2.1" fill="${PALETA.ciano}"/>
+  <rect x="16.5" y="4.8" width="4.7" height="16.4" rx="2.1" fill="url(#gBar)"/>
+  <path d="M18.85 1.4l.86 1.74 1.92.28-1.39 1.35.33 1.91-1.72-.9-1.72.9.33-1.91-1.39-1.35 1.92-.28z" fill="${PALETA.ambarClaro}"/>
+  <defs>${grad('gBar', PALETA.ambarClaro, PALETA.rosa, 16, 5, 21, 21)}</defs>
 `);
 
-/**
- * Ajustes: controles deslizantes, nao engrenagem.
- *
- * A tela de ajustes e feita de sliders — o icone mostrar exatamente o que ha
- * do outro lado poupa uma leitura.
- */
+/** Ajustes: tres sliders com botoes grossos. */
 const ajustes = svg(`
-  <path d="M4 6.5h16M4 12h16M4 17.5h16"
-        stroke="rgba(255,255,255,.32)" stroke-width="2" stroke-linecap="round"/>
-  <circle cx="15.5" cy="6.5" r="3.1" fill="${PALETA.rosa}" stroke="${PALETA.escuro}" stroke-width="1.4"/>
-  <circle cx="8" cy="12" r="3.1" fill="${PALETA.ciano}" stroke="${PALETA.escuro}" stroke-width="1.4"/>
-  <circle cx="13" cy="17.5" r="3.1" fill="${PALETA.ambar}" stroke="${PALETA.escuro}" stroke-width="1.4"/>
+  <path d="M4 6.5h16M4 12h16M4 17.5h16" stroke="rgba(255,255,255,.3)" stroke-width="2.4" stroke-linecap="round"/>
+  <circle cx="15.5" cy="6.5" r="3.4" fill="${PALETA.rosa}"/>
+  <circle cx="8" cy="12" r="3.4" fill="${PALETA.ciano}"/>
+  <circle cx="13.5" cy="17.5" r="3.4" fill="${PALETA.ambar}"/>
+  <circle cx="14.4" cy="5.6" r="1" fill="#fff" opacity=".55"/>
+  <circle cx="6.9" cy="11.1" r="1" fill="#fff" opacity=".55"/>
+  <circle cx="12.4" cy="16.6" r="1" fill="#fff" opacity=".55"/>
 `);
 
-/** Som ligado. */
+/** Som ligado: alto-falante cheio com ondas. */
 const somLigado = svg(`
-  <path d="M4 9.2h3.4L12 5.2v13.6l-4.6-4H4z" fill="${PALETA.ciano}"/>
-  <path d="M15.4 9.4a3.6 3.6 0 010 5.2" stroke="${PALETA.ciano}"
-        stroke-width="1.9" stroke-linecap="round"/>
-  <path d="M18 7a7.2 7.2 0 010 10" stroke="${PALETA.ciano}" stroke-width="1.9"
-        stroke-linecap="round" opacity=".6"/>
+  <path d="M4 9.1h3.3L11.6 5.1v13.8l-4.3-4H4z" fill="url(#gSom)"/>
+  <path d="M14.8 9.3a4 4 0 010 5.4" stroke="${PALETA.cianoClaro}" stroke-width="2" stroke-linecap="round"/>
+  <path d="M17.4 6.9a7.4 7.4 0 010 10.2" stroke="${PALETA.ciano}" stroke-width="2" stroke-linecap="round" opacity=".55"/>
+  <defs>${grad('gSom', PALETA.cianoClaro, PALETA.cianoEscuro, 4, 5, 12, 19)}</defs>
 `);
 
 /** Som desligado. */
 const somMudo = svg(`
-  <path d="M4 9.2h3.4L12 5.2v13.6l-4.6-4H4z" fill="rgba(255,255,255,.42)"/>
-  <path d="M16 9.5l5 5M21 9.5l-5 5" stroke="${PALETA.rosa}"
-        stroke-width="2" stroke-linecap="round"/>
+  <path d="M4 9.1h3.3L11.6 5.1v13.8l-4.3-4H4z" fill="rgba(255,255,255,.44)"/>
+  <path d="M15.4 9.4l5.2 5.2M20.6 9.4l-5.2 5.2" stroke="${PALETA.rosa}" stroke-width="2.3" stroke-linecap="round"/>
 `);
 
-/** Dica. */
+/** Dica: lampada acesa. */
 const dica = svg(`
-  <path d="M12 3a6.2 6.2 0 00-3.6 11.3c.5.4.8 1 .8 1.6v.4h5.6v-.4c0-.6.3-1.2.8-1.6A6.2 6.2 0 0012 3z"
-        fill="url(#gradDica)"/>
-  <path d="M9.6 18.6h4.8M10.4 21h3.2" stroke="${PALETA.ambar}"
-        stroke-width="1.8" stroke-linecap="round"/>
-  <defs>
-    <linearGradient id="gradDica" x1="8" y1="3" x2="16" y2="17">
-      <stop offset="0" stop-color="#ffe27a"/>
-      <stop offset="1" stop-color="${PALETA.ambar}"/>
-    </linearGradient>
-  </defs>
+  <path d="M12 2.4a6.6 6.6 0 00-4.1 11.8c.6.5 1 1.2 1 2v.5h6.2v-.5c0-.8.4-1.5 1-2A6.6 6.6 0 0012 2.4z" fill="url(#gDica)"/>
+  <path d="M9.4 18.6h5.2M10.3 21h3.4" stroke="${PALETA.ambar}" stroke-width="2" stroke-linecap="round"/>
+  <path d="M9.6 8.4a2.6 2.6 0 012.4-1.7" stroke="#fff" stroke-width="1.4" stroke-linecap="round" opacity=".6"/>
+  <defs>${grad('gDica', '#fff0a8', PALETA.ambar, 7, 2, 16, 16)}</defs>
 `);
 
-/** Editar o proprio nome. */
+/** Editar o proprio nome: lapis. */
 const editar = svg(`
-  <path d="M4 20h4.2l9.6-9.6-4.2-4.2L4 15.8V20z" fill="${PALETA.ambar}" opacity=".9"/>
-  <path d="M15.2 4.8l4.2 4.2 1.4-1.4a1.6 1.6 0 000-2.3l-1.9-1.9a1.6 1.6 0 00-2.3 0l-1.4 1.4z"
-        fill="${PALETA.rosa}"/>
-`);
-
-/** Ranking mundial: trofeu. */
-const trofeu = svg(`
-  <path d="M6.5 4h11v3.2a5.5 5.5 0 01-11 0V4z" fill="url(#gradTrofeu)"/>
-  <path d="M6.5 5.2H4v1.4a2.6 2.6 0 002.6 2.6M17.5 5.2H20v1.4a2.6 2.6 0 01-2.6 2.6"
-        stroke="${PALETA.ambar}" stroke-width="1.5" fill="none" stroke-linecap="round"/>
-  <rect x="10.4" y="12.2" width="3.2" height="3.4" fill="${PALETA.ambar}"/>
-  <path d="M7.6 20.4h8.8v-1.4a1.6 1.6 0 00-1.6-1.6H9.2a1.6 1.6 0 00-1.6 1.6v1.4z" fill="url(#gradTrofeu)"/>
-  <defs>
-    <linearGradient id="gradTrofeu" x1="7" y1="4" x2="17" y2="20">
-      <stop offset="0" stop-color="#ffe27a"/>
-      <stop offset="1" stop-color="${PALETA.ambar}"/>
-    </linearGradient>
-  </defs>
+  <path d="M3.6 20.4h4.3l9.9-9.9-4.3-4.3-9.9 9.9z" fill="url(#gEdit)"/>
+  <path d="M15.3 4.4l4.3 4.3 1.35-1.35a1.7 1.7 0 000-2.4l-1.9-1.9a1.7 1.7 0 00-2.4 0z" fill="${PALETA.rosa}"/>
+  <path d="M3.6 20.4l1-3.6 2.6 2.6z" fill="${PALETA.escuro}" opacity=".55"/>
+  <defs>${grad('gEdit', PALETA.ambarClaro, PALETA.ambar, 4, 6, 18, 20)}</defs>
 `);
 
 /** Sair da partida. */
 const sair = svg(`
-  <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" stroke="currentColor"
-        stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M7 7l10 10M17 7L7 17" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
 `);
 
 export const ICONES = {

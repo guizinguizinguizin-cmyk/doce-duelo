@@ -44,60 +44,54 @@
 
 <main id="app">
 
-  <!-- ================= MENU ================= -->
+  <!-- ================= MENU (hub competitivo) ================= -->
   <section id="screenMenu" class="screen" aria-label="Menu principal">
-    <div class="hero">
-      <div class="hero-gems" id="heroGems" aria-hidden="true"></div>
-      <p class="hero-tagline">Combine, ataque e seja o último de pé.</p>
+    <!-- Card do jogador: emblema do rank, nome, rank e progresso. -->
+    <div class="player-card">
+      <button id="btnRankCard" class="player-card-main" aria-label="Ver como funcionam os ranks">
+        <span class="player-emblem" id="rankSelo"></span>
+        <span class="player-info">
+          <strong class="player-name" id="menuPlayerName">—</strong>
+          <span class="player-rank" id="rankNome">—</span>
+          <span class="rank-barra"><i id="rankProgresso"></i></span>
+          <small class="player-detalhe" id="rankDetalhe"></small>
+        </span>
+        <span class="player-chevron" aria-hidden="true"></span>
+      </button>
+      <button id="btnEditName" class="player-edit" aria-label="Mudar meu nome">
+        <span data-icone="editar"></span>
+      </button>
     </div>
 
-    <button id="btnPlaySolo" class="menu-btn primary">
-      <span class="menu-btn-icon" data-icone="solo"></span>
-      <span class="menu-btn-text">
+    <!-- CTA grande. -->
+    <button id="btnPlaySolo" class="cta-play">
+      <span class="cta-icon" data-icone="solo"></span>
+      <span class="cta-text">
         <strong>Jogar sozinho</strong>
         <small>Contra a máquina, sem precisar de internet</small>
       </span>
+      <span class="cta-arrow" aria-hidden="true"></span>
     </button>
 
-    <button id="btnPlayOnline" class="menu-btn">
-      <span class="menu-btn-icon" data-icone="amigos"></span>
-      <span class="menu-btn-text">
-        <strong>Jogar com amigos</strong>
-        <small>Até 4 pessoas, cada uma no seu celular</small>
-      </span>
-    </button>
-
-    <div class="menu-row">
-      <button id="btnStats" class="menu-btn small">
-        <span class="menu-btn-icon" data-icone="estatisticas"></span>
-        <span class="menu-btn-text"><strong>Estatísticas</strong></span>
+    <!-- Grade de blocos 2x2. -->
+    <div class="menu-grid">
+      <button id="btnPlayOnline" class="tile">
+        <span class="tile-icon" data-icone="amigos"></span>
+        <span class="tile-label">Jogar com amigos</span>
       </button>
-      <button id="btnSettings" class="menu-btn small">
-        <span class="menu-btn-icon" data-icone="ajustes"></span>
-        <span class="menu-btn-text"><strong>Ajustes</strong></span>
+      <button id="btnRanking" class="tile">
+        <span class="tile-icon" data-icone="trofeu"></span>
+        <span class="tile-label">Ranking mundial</span>
+      </button>
+      <button id="btnStats" class="tile">
+        <span class="tile-icon" data-icone="estatisticas"></span>
+        <span class="tile-label">Estatísticas</span>
+      </button>
+      <button id="btnSettings" class="tile">
+        <span class="tile-icon" data-icone="ajustes"></span>
+        <span class="tile-label">Ajustes</span>
       </button>
     </div>
-
-    <button id="btnRanking" class="menu-btn">
-      <span class="menu-btn-icon" data-icone="trofeu"></span>
-      <span class="menu-btn-text">
-        <strong>Ranking mundial</strong>
-        <small>Veja os melhores do mundo</small>
-      </span>
-    </button>
-
-    <button id="btnRankCard" class="rank-card">
-      <span class="rank-selo" id="rankSelo"></span>
-      <span class="rank-texto">
-        <strong id="rankNome">—</strong>
-        <small id="rankDetalhe"></small>
-        <span class="rank-barra"><i id="rankProgresso"></i></span>
-      </span>
-    </button>
-
-    <button id="btnEditName" class="name-chip">
-      Jogando como <strong id="menuPlayerName">—</strong> <span class="pencil" data-icone="editar"></span>
-    </button>
   </section>
 
   <!-- ================= SOLO ================= -->

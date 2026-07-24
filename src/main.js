@@ -1880,7 +1880,7 @@ function refreshRankCard() {
   const nota = storage.rating;
   const rank = rankDe(notaExibida(nota));
 
-  el.rankSelo.innerHTML = seloDoRank(rank, 44);
+  el.rankSelo.innerHTML = seloDoRank(rank, 54);
   el.rankNome.textContent = rank.nome;
   el.rankNome.style.color = rank.cor;
   el.rankProgresso.style.width = Math.round(rank.progresso * 100) + '%';
@@ -2207,6 +2207,7 @@ document.addEventListener('visibilitychange', () => {
  * que menu e tabuleiro nunca divirjam — mudar a arte das pecas muda as duas.
  */
 function buildHeroGems() {
+  if (!el.heroGems) return; // hub novo nao tem a fileira de gemas
   el.heroGems.innerHTML = '';
   const lado = 40;
   const dpr = Math.min(window.devicePixelRatio || 1, 3);

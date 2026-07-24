@@ -1901,3 +1901,150 @@ body.modo-espectador #screenBattle::before {
   .menu-btn.primary { animation: none; }
   .bar-fill-h::after { animation: none; }
 }
+
+/* ============================================================
+   Menu HUB competitivo (card do jogador + CTA + grade)
+   ============================================================ */
+.player-card {
+  position: relative;
+  width: 100%;
+  margin-top: 8px;
+}
+.player-card-main {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 52px 16px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--edge);
+  background:
+    radial-gradient(130% 150% at 0% 0%, rgba(255, 77, 141, 0.16), transparent 55%),
+    linear-gradient(180deg, var(--panel-2) 0%, var(--bg-deep) 100%);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: transform 0.12s ease, border-color 0.2s ease;
+}
+.player-card-main:active { transform: scale(0.99); }
+.player-emblem {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  filter: drop-shadow(0 4px 11px rgba(0, 0, 0, 0.55));
+}
+.player-info { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.player-name { font-size: 1.16rem; letter-spacing: -0.01em; line-height: 1.15; }
+.player-rank { font-size: 0.82rem; font-weight: 800; letter-spacing: 0.02em; margin-top: 2px; }
+.player-info .rank-barra { height: 6px; margin-top: 7px; width: 100%; }
+.player-detalhe { color: var(--text-faint); font-size: 0.72rem; margin-top: 5px; }
+.player-chevron { display: none; }
+.player-edit {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  border: 1px solid var(--edge);
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.2s ease;
+}
+.player-edit:active { transform: scale(0.9); }
+.player-edit svg { width: 15px; height: 15px; display: block; }
+
+/* CTA grande. */
+.cta-play {
+  width: 100%;
+  margin-top: 13px;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 19px 18px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  background:
+    linear-gradient(135deg, rgba(255, 77, 141, 0.95), rgba(255, 45, 120, 0.72)),
+    linear-gradient(180deg, var(--panel-2), var(--bg-deep));
+  color: #fff;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  box-shadow: 0 10px 30px rgba(255, 45, 120, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  animation: ctaGlow 3.6s ease-in-out infinite;
+}
+.cta-play:active { transform: scale(0.99); }
+.cta-icon {
+  width: 54px;
+  height: 54px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 15px;
+  background: rgba(0, 0, 0, 0.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+.cta-icon svg { width: 30px; height: 30px; display: block; }
+.cta-text { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.cta-text strong { font-size: 1.22rem; }
+.cta-text small { font-size: 0.8rem; opacity: 0.92; }
+.cta-arrow {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  border-right: 2.5px solid rgba(255, 255, 255, 0.9);
+  border-top: 2.5px solid rgba(255, 255, 255, 0.9);
+  transform: rotate(45deg);
+}
+
+/* Grade 2x2. */
+.menu-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 11px;
+  margin-top: 12px;
+}
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 18px 10px;
+  min-height: 108px;
+  border-radius: var(--radius);
+  border: 1px solid var(--edge);
+  background: linear-gradient(180deg, var(--panel) 0%, var(--bg-deep) 100%);
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  text-align: center;
+  transition: transform 0.12s ease, border-color 0.2s ease;
+}
+.tile:active { transform: scale(0.97); }
+.tile:hover { border-color: var(--accent-soft); }
+.tile-icon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: var(--tile);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 4px 11px rgba(0, 0, 0, 0.3);
+  position: relative;
+  overflow: hidden;
+}
+.tile-icon::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 120%, rgba(255, 255, 255, 0.16), transparent 70%);
+}
+.tile-icon svg { width: 27px; height: 27px; display: block; }
+.tile-label { font-size: 0.86rem; font-weight: 700; line-height: 1.2; }

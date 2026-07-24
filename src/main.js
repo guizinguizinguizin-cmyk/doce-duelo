@@ -25,7 +25,7 @@ import {
 } from './core/board.js';
 import { createRenderer } from './render/renderer.js';
 import { createBackdrop } from './render/backdrop.js';
-import { GEM_COLORS, BLOCKED_COLOR, drawGem } from './render/gems.js';
+import { GEM_COLORS, drawGem, drawBlocker } from './render/gems.js';
 import { ICONES, aplicarIcones } from './render/icons.js';
 import { createAudio } from './audio/audio.js';
 import { createSession } from './game/session.js';
@@ -275,16 +275,12 @@ function buildOpponentCard(player) {
   name.className = 'opponent-name';
   name.textContent = player.name;
 
-  const board = document.createElement('div');
+  // Miniatura em canvas: desenha as PECAS de verdade (as mesmas do tabuleiro),
+  // nao quadradinhos de cor. E uma copia fiel e pequena do jogo do adversario.
+  const board = document.createElement('canvas');
   board.className = 'mini-board';
-  board.style.gridTemplateColumns = `repeat(${COLS}, 1fr)`;
-  const cells = new Array(CELL_COUNT);
-  for (let i = 0; i < CELL_COUNT; i++) {
-    const cell = document.createElement('div');
-    cell.className = 'mini-cell';
-    board.appendChild(cell);
-    cells[i] = cell;
-  }
+  board.width = MINI_RES;
+  board.height = MINI_RES;
 
   const track = document.createElement('div');
   track.className = 'opponent-bar-track';
@@ -303,9 +299,33 @@ function buildOpponentCard(player) {
   // Em jogo normal nao faz nada (aoClicarJogador so age nesses modos).
   card.addEventListener('click', () => aoClicarJogador(player.id));
 
-  const refs = { card, name, cells, fill, score };
+  const refs = { card, name, board, fill, score };
   opponentCards.set(player.id, refs);
   return refs;
+}
+
+/** Resolucao interna da miniatura (px do canvas). Pequena e nitida. */
+const MINI_RES = 184;
+
+/**
+ * Pinta a miniatura do adversario com as PECAS de verdade (drawGem), o que a
+ * torna uma copia fiel e minuscula do tabuleiro dele — nao mais quadradinhos.
+ * So redesenha quando o tabuleiro muda (na chegada de estado), nao por quadro.
+ */
+function pintarMiniatura(cv, tipos) {
+  const c = cv.getContext('2d');
+  c.clearRect(0, 0, cv.width, cv.height);
+  if (!tipos) return;
+  const cell = cv.width / COLS;
+  const r = cell * 0.4;
+  for (let i = 0; i < CELL_COUNT; i++) {
+    const code = tipos[i];
+    if (code == null) continue;
+    const x = (i % COLS) * cell + cell / 2;
+    const y = ((i / COLS) | 0) * cell + cell / 2;
+    if (code >= GEM_COLORS.length) drawBlocker(c, x, y, r, 'pedra', 1);
+    else drawGem(c, x, y, r, code, 0, 0);
+  }
 }
 
 function renderOpponents(roster) {
@@ -341,15 +361,7 @@ function renderOpponents(roster) {
       player.alive && ((player.pressure ?? 0) + (player.pending ?? 0)) / PRESSURE_MAX > 0.75
     );
 
-    if (player.boardTypes) {
-      for (let i = 0; i < CELL_COUNT; i++) {
-        // O codigo acima da faixa de cores e lixo: quem assiste precisa ver
-        // o tabuleiro do adversario sujando.
-        const codigo = player.boardTypes[i];
-        refs.cells[i].style.background =
-          codigo >= GEM_COLORS.length ? BLOCKED_COLOR : GEM_COLORS[codigo] || '#2b1a52';
-      }
-    }
+    if (player.boardTypes) pintarMiniatura(refs.board, player.boardTypes);
   }
 }
 
@@ -794,13 +806,7 @@ function atualizarMiniReplay(ev) {
   refs.score.textContent = ev.score;
   refs.fill.style.width = Math.min(100, (ev.pressure / PRESSURE_MAX) * 100) + '%';
   refs.card.classList.toggle('eliminated', !ev.alive);
-  if (ev.tipos) {
-    for (let i = 0; i < CELL_COUNT; i++) {
-      const codigo = ev.tipos[i];
-      refs.cells[i].style.background =
-        codigo >= GEM_COLORS.length ? BLOCKED_COLOR : GEM_COLORS[codigo] || '#2b1a52';
-    }
-  }
+  if (ev.tipos) pintarMiniatura(refs.board, ev.tipos);
 }
 
 async function animarJogadaReplay(a, b, resultado) {

@@ -70,7 +70,8 @@ async function abrirJogador(navegador, nome) {
   await pagina.addInitScript((n) => {
     localStorage.setItem(
       'doceduelo:v2',
-      JSON.stringify({ name: n, tutorialSeen: true, settings: { muted: true } })
+      // debug: true deixa o painel tecnico (com a semente) disponivel ao teste.
+      JSON.stringify({ name: n, tutorialSeen: true, settings: { muted: true, debug: true } })
     );
     // Placar desligado: teste nao envia nota-fantasma ao Supabase real.
     localStorage.setItem('doceduelo:supabase', JSON.stringify({ off: true }));
@@ -99,19 +100,25 @@ async function entrarNaSala(jogador, codigo) {
   await jogador.pagina.locator('#btnJoin').click();
 }
 
-/** Assinatura visual do canvas: se a semente for compartilhada, bate nos dois. */
-function assinaturaDoTabuleiro(pagina) {
-  return pagina.evaluate(() => {
-    const canvas = document.getElementById('boardCanvas');
-    const ctx = canvas.getContext('2d');
-    const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-    let h = 2166136261;
-    for (let i = 0; i < d.length; i += 4 * 53) {
-      h ^= d[i] + d[i + 1] * 3 + d[i + 2] * 7;
-      h = Math.imul(h, 16777619);
+/**
+ * Le o NUMERO da semente no painel tecnico. E o sinal certo para "a semente
+ * sincronizou": o hash de pixels do canvas engana, porque a animacao (shimmer)
+ * dos clientes roda fora de fase — mesmo tabuleiro, pixels diferentes.
+ */
+async function lerSemente(pagina) {
+  await pagina.evaluate(() => {
+    if (document.getElementById('debugPanel').classList.contains('hidden')) {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'd' }));
     }
-    return (h >>> 0).toString(16);
   });
+  // O painel so ganha a semente no proximo tick da partida; da um tempo e tenta.
+  for (let i = 0; i < 10; i++) {
+    const txt = await pagina.locator('#debugPanel').innerText();
+    const m = /semente\s+(\d+)/.exec(txt);
+    if (m) return m[1];
+    await sleep(200);
+  }
+  return null;
 }
 
 async function geometriaDoTabuleiro(pagina) {
@@ -210,10 +217,10 @@ async function cenarioDuplo(navegador) {
 
     await sleep(2200);
 
-    const assA = await assinaturaDoTabuleiro(anfitriao.pagina);
-    const assB = await assinaturaDoTabuleiro(convidado.pagina);
-    if (assA === assB) ok(`tabuleiro inicial identico nos dois (${assA})`);
-    else falhar(`semente nao sincronizou: ${assA} x ${assB}`);
+    const semA = await lerSemente(anfitriao.pagina);
+    const semB = await lerSemente(convidado.pagina);
+    if (semA && semA === semB) ok(`semente compartilhada nos dois (${semA})`);
+    else falhar(`semente nao sincronizou: ${semA} x ${semB}`);
 
     // ---- ataque anfitriao -> convidado ----
     const chegou = await jogarAte(anfitriao.pagina, async () => {
@@ -302,11 +309,11 @@ async function cenarioTriplo(navegador) {
     if (cards.every((n) => n === 2)) ok('cada jogador ve os outros dois');
     else falhar(`cartoes de adversario errados: ${cards.join(', ')}`);
 
-    const assinaturas = await Promise.all(
-      [anfitriao, jogador2, jogador3].map((j) => assinaturaDoTabuleiro(j.pagina))
+    const sementes = await Promise.all(
+      [anfitriao, jogador2, jogador3].map((j) => lerSemente(j.pagina))
     );
-    if (new Set(assinaturas).size === 1) ok(`os tres tabuleiros sao identicos (${assinaturas[0]})`);
-    else falhar(`tabuleiros diferentes entre os tres: ${assinaturas.join(', ')}`);
+    if (sementes[0] && new Set(sementes).size === 1) ok(`os tres tem a mesma semente (${sementes[0]})`);
+    else falhar(`sementes diferentes entre os tres: ${sementes.join(', ')}`);
 
     // Um jogador sai no meio: a partida NAO pode acabar, ainda ha dois vivos.
     await jogador3.pagina.close();

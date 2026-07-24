@@ -29,8 +29,7 @@ import { GEM_COLORS, BLOCKED_COLOR, drawGem } from './render/gems.js';
 import { ICONES, aplicarIcones } from './render/icons.js';
 import { createAudio } from './audio/audio.js';
 import { createSession } from './game/session.js';
-import { createMatch } from './game/match.js';
-import { desserializar } from './game/replay.js';
+import { createGravador, tabuleiroInicial, ehReplayPessoal } from './game/replay-perspectiva.js';
 import { PRESSURE_MAX, streakMultiplier } from './game/balance.js';
 import { DIFFICULTIES } from './game/bot.js';
 import { createNetwork } from './net/peer.js';
@@ -119,10 +118,7 @@ const el = {
   rankResultadoDelta: $('rankResultadoDelta'),
   rankResultadoMotivo: $('rankResultadoMotivo'),
   btnRematch: $('btnRematch'),
-  btnReplay: $('btnReplay'),
   btnWatchReplay: $('btnWatchReplay'),
-  btnAssistir: $('btnAssistir'),
-  replayInput: $('replayInput'),
   replayBar: $('replayBar'),
   replayPause: $('replayPause'),
   replaySpeed: $('replaySpeed'),
@@ -133,6 +129,7 @@ const el = {
   gameOverCard: $('gameOverCard'),
 
   statsGrid: $('statsGrid'),
+  histLista: $('histLista'),
   nameInput: $('nameInput'),
   musicSlider: $('musicSlider'),
   sfxSlider: $('sfxSlider'),
@@ -628,13 +625,14 @@ async function playPhases(phases) {
 }
 
 // ---------------------------------------------------------------------------
-// Player de replay
+// Player de replay (formato de perspectiva)
 // ---------------------------------------------------------------------------
 //
-// Reconstroi a partida da SEMENTE e reproduz as jogadas gravadas, animadas no
-// tabuleiro. Reusa a tela de batalha (tabuleiro principal = jogador em foco,
-// miniaturas = os outros) e o motor determinista (createMatch) para a pressao,
-// os ataques e as eliminacoes saírem exatamente como na partida original.
+// Reproduz a PROPRIA partida gravada. O tabuleiro do jogador e reconstruido da
+// semente e das operacoes gravadas em ordem (jogada, embaralho, lixo), o que o
+// deixa identico ao que ele jogou. As barras vem prontas do estado gravado
+// (nada e re-simulado, entao nada diverge) e as miniaturas dos adversarios das
+// fotos gravadas. Ver src/game/replay-perspectiva.js.
 
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -642,11 +640,26 @@ let replayRodando = false;
 let replayPausado = false;
 let replayVelocidade = 1;
 
-function atualizarBarraReplay(partida, foco) {
-  const st = partida.instantaneo(foco);
+// Gravador da partida em andamento (perspectiva do jogador local). Vale para
+// solo E online — cada cliente grava a propria partida.
+let gravador = null;
+
+/** Estado visivel do jogador local agora, para carimbar nos eventos gravados. */
+function snapshotFoco() {
+  if (!session) return { pressure: 0, pending: 0, alert: 'normal', score: 0 };
+  return {
+    pressure: session.pressure,
+    pending: session.pending,
+    alert: session.alert,
+    score: session.localScore,
+  };
+}
+
+function aplicarEstadoReplay(st) {
   if (!st) return;
+  const pend = st.pending || 0;
   const pctAtual = (st.pressure / PRESSURE_MAX) * 100;
-  const pctPend = Math.max(0, Math.min(100 - pctAtual, (st.pending / PRESSURE_MAX) * 100));
+  const pctPend = Math.max(0, Math.min(100 - pctAtual, (pend / PRESSURE_MAX) * 100));
   el.myBarFill.style.width = pctAtual + '%';
   el.myPendingFill.style.left = pctAtual + '%';
   el.myPendingFill.style.width = pctPend + '%';
@@ -655,31 +668,31 @@ function atualizarBarraReplay(partida, foco) {
   el.myBarFill.classList.toggle('perigo', st.alert === 'perigo');
   el.myBarFill.classList.toggle('critico', st.alert === 'critico');
   el.myScore.textContent = st.score;
-  el.incomingBadge.classList.toggle('hidden', st.pending <= 0);
-  if (st.pending > 0) el.incomingBadge.textContent = '+' + st.pending;
+  el.incomingBadge.classList.toggle('hidden', pend <= 0);
+  if (pend > 0) el.incomingBadge.textContent = '+' + pend;
 }
 
-function montarMinisReplay(replay, foco) {
+function montarMinisReplay(replay) {
   el.opponentsRow.innerHTML = '';
   opponentCards.clear();
   for (const jog of replay.jogadores) {
-    if (jog.id === foco) continue;
+    if (jog.id === replay.euId) continue;
     buildOpponentCard({ id: jog.id, name: jog.name });
   }
 }
 
-function atualizarMiniReplay(partida, id, mesa) {
-  const refs = opponentCards.get(id);
+function atualizarMiniReplay(ev) {
+  const refs = opponentCards.get(ev.id);
   if (!refs) return;
-  const st = partida.instantaneo(id);
-  if (!st) return;
-  refs.score.textContent = st.score;
-  refs.fill.style.width = Math.min(100, (st.pressure / PRESSURE_MAX) * 100) + '%';
-  refs.card.classList.toggle('eliminated', !st.alive);
-  const tipos = serializeTypes(mesa.grid);
-  for (let i = 0; i < CELL_COUNT; i++) {
-    const codigo = tipos[i];
-    refs.cells[i].style.background = codigo >= GEM_COLORS.length ? BLOCKED_COLOR : GEM_COLORS[codigo] || '#2b1a52';
+  refs.score.textContent = ev.score;
+  refs.fill.style.width = Math.min(100, (ev.pressure / PRESSURE_MAX) * 100) + '%';
+  refs.card.classList.toggle('eliminated', !ev.alive);
+  if (ev.tipos) {
+    for (let i = 0; i < CELL_COUNT; i++) {
+      const codigo = ev.tipos[i];
+      refs.cells[i].style.background =
+        codigo >= GEM_COLORS.length ? BLOCKED_COLOR : GEM_COLORS[codigo] || '#2b1a52';
+    }
   }
 }
 
@@ -699,90 +712,82 @@ function sairDoReplay() {
 }
 
 async function assistirReplay(replay) {
-  if (!replay || !replay.jogadores || !replay.jogadores.length) {
-    alert('Replay inválido.');
+  if (!ehReplayPessoal(replay)) {
+    alert('Este replay não está disponível.');
     return;
   }
 
-  const foco = (replay.jogadores.find((p) => !p.isBot) || replay.jogadores[0]).id;
+  const foco = replay.euId;
   replayRodando = true;
   replayPausado = false;
   replayVelocidade = 1;
   el.replaySpeed.textContent = '1x';
   el.replayPause.textContent = '⏸';
 
-  // Reconstroi um tabuleiro por jogador (mesma semente) e o motor da partida.
-  const mesas = new Map();
-  for (const jog of replay.jogadores) {
-    const r = createMatchRandom(replay.seed, COLS);
-    mesas.set(jog.id, { grid: createGrid(r), rng: r });
-  }
-  const partida = createMatch({ seed: replay.seed, players: replay.jogadores, startedAt: 0 });
+  // Tabuleiro do jogador, reconstruido da semente. As operacoes gravadas
+  // (move/shuffle/lixo) sao reproduzidas em ordem contra ESTE gerador.
+  const { grid: gReplay, rng: rReplay } = tabuleiroInicial(replay.seed);
+  grid = gReplay;
 
   document.body.classList.add('modo-replay');
-  el.myNameLabel.textContent = (replay.jogadores.find((p) => p.id === foco) || {}).name || 'Jogador';
+  const eu = replay.jogadores.find((p) => p.id === foco);
+  el.myNameLabel.textContent = (eu && eu.name) || 'Você';
   el.battleHint.textContent = 'Assistindo replay';
   showScreen('Battle');
 
-  grid = mesas.get(foco).grid;
   renderer.setGrid(grid);
   renderer.setSelection(null);
   renderer.setHint(null);
-  montarMinisReplay(replay, foco);
-  atualizarBarraReplay(partida, foco);
+  montarMinisReplay(replay);
+  aplicarEstadoReplay({ pressure: 0, pending: 0, alert: 'normal', score: 0 });
   el.replayBar.classList.remove('hidden');
   await renderer.introDrop();
-
-  const linha = [
-    ...replay.eliminacoes.map((e) => ({ t: e.t, ordem: 0, tipo: 'saida', ...e })),
-    ...replay.jogadas.map((m) => ({ t: m.t, ordem: 1, tipo: 'jogada', ...m })),
-  ].sort((a, b) => a.t - b.t || a.ordem - b.ordem);
 
   const dur = Math.max(1, replay.duracao);
   let tAnterior = 0;
 
-  for (const ent of linha) {
+  for (const ev of replay.eventos) {
     if (!replayRodando) return;
     while (replayPausado && replayRodando) await espera(80);
     if (!replayRodando) return;
 
     // Espera proporcional ao intervalo real, limitada para nao arrastar.
-    const gap = Math.min(1000, Math.max(50, ent.t - tAnterior));
+    const gap = Math.min(1000, Math.max(30, ev.t - tAnterior));
     await espera(gap / replayVelocidade);
     if (!replayRodando) return;
-    tAnterior = ent.t;
+    tAnterior = ev.t;
+    el.replayProgress.style.width = Math.min(100, (ev.t / dur) * 100) + '%';
 
-    partida.avancarPara(ent.t);
-    atualizarBarraReplay(partida, foco);
-    for (const [id, mesa] of mesas) if (id !== foco) atualizarMiniReplay(partida, id, mesa);
-    el.replayProgress.style.width = Math.min(100, (ent.t / dur) * 100) + '%';
-
-    if (ent.tipo === 'saida') {
-      partida.eliminar(ent.j, ent.t, ent.motivo);
-      for (const [id, mesa] of mesas) if (id !== foco) atualizarMiniReplay(partida, id, mesa);
-      if (partida.finished) break;
-      continue;
+    if (ev.k === 'move') {
+      const resultado = trySwap(grid, ev.a, ev.b, rReplay);
+      if (resultado.ok) await animarJogadaReplay(ev.a, ev.b, resultado);
+      aplicarEstadoReplay(ev.st);
+    } else if (ev.k === 'shuffle') {
+      shuffleGrid(grid, rReplay);
+      renderer.setGrid(grid);
+      await renderer.introDrop();
+    } else if (ev.k === 'lixo') {
+      injectGarbage(grid, ev.qtd, ev.tipo, rReplay);
+      renderer.setGrid(grid);
+      renderer.shake(6 + ev.qtd * 1.5);
+      audio.play(ev.tipo === 'cadeado' ? 'createSpecial' : 'wrapped');
+      aplicarEstadoReplay(ev.st);
+    } else if (ev.k === 'in') {
+      audio.play('swapFail');
+      aplicarEstadoReplay(ev.st);
+    } else if (ev.k === 'land') {
+      renderer.shake(Math.min(24, 7 + ev.units * 2.2));
+      renderer.flash('rgba(255,60,60,0.42)', 0.5);
+      audio.play('attackTake');
+      aplicarEstadoReplay(ev.st);
+    } else if (ev.k === 'op') {
+      atualizarMiniReplay(ev);
     }
-
-    const mesa = mesas.get(ent.j);
-    if (!findMove(mesa.grid)) shuffleGrid(mesa.grid, mesa.rng);
-    const resultado = trySwap(mesa.grid, ent.a, ent.b, mesa.rng);
-    partida.aplicarJogada(ent.j, resultado, ent.t);
-
-    if (ent.j === foco && resultado.ok) {
-      grid = mesa.grid;
-      await animarJogadaReplay(ent.a, ent.b, resultado);
-      atualizarBarraReplay(partida, foco);
-    } else {
-      atualizarMiniReplay(partida, ent.j, mesa);
-    }
-    if (partida.finished) break;
   }
 
   if (!replayRodando) return;
   el.replayProgress.style.width = '100%';
-  const venceu = partida.winnerId === foco;
-  el.battleHint.textContent = venceu ? '🏆 Vitória nesta partida' : 'Fim do replay';
+  el.battleHint.textContent = replay.ganhei ? '🏆 Vitória nesta partida' : 'Fim do replay';
   await espera(1400);
   sairDoReplay();
 }
@@ -811,6 +816,9 @@ function aplicarLixo() {
     if (!colocados.length) continue;
     total += colocados.length;
     ultima = lixo;
+    // Grava a QUANTIDADE PEDIDA (nao a colocada): e ela que injectGarbage usa
+    // para consumir o gerador, entao e ela que o replay precisa repetir.
+    if (gravador) gravador.lixo(lixo.tipo, lixo.quantidade, snapshotFoco(), Date.now());
   }
   if (!total) return;
 
@@ -864,6 +872,9 @@ async function attemptMove(a, b) {
   if (info && info.points > 0) {
     renderer.floatText(`+${info.points}`, b, '#ffe27a', result.cascades >= 3);
   }
+  // Grava a jogada ANTES do embaralho e do lixo, para o replay reproduzir o
+  // consumo do gerador na mesma ordem em que aconteceu ao vivo.
+  if (gravador) gravador.move(a, b, snapshotFoco(), info ? info.points : 0, Date.now());
   // O cancelamento e o ataque tem retorno proprio, mais forte, tratados nos
   // ganchos onLocalMove/onAttackSent (celebrarCancelamento e dispararAtaque).
 
@@ -872,6 +883,7 @@ async function attemptMove(a, b) {
     announce('Sem jogadas. Embaralhando o tabuleiro.');
     el.battleHint.textContent = 'Sem jogadas — embaralhando!';
     shuffleGrid(grid, rng);
+    if (gravador) gravador.shuffle(Date.now());
     renderer.setGrid(grid);
     await renderer.introDrop();
     el.battleHint.textContent = 'Arraste um doce para o vizinho para trocar';
@@ -976,6 +988,15 @@ function createSessionWithHooks() {
     onRosterChange: (roster) => {
       renderOpponents(roster);
       renderRosterList(roster);
+      // Fotos dos adversarios para as miniaturas do replay (limitadas no tempo
+      // pelo proprio gravador). So durante a partida.
+      if (gravador && session && session.active) {
+        const agora = Date.now();
+        for (const p of roster) {
+          if (p.id === session.localId) continue;
+          gravador.opponent(p.id, p.score || 0, p.pressure || 0, p.alive !== false, p.boardTypes || null, agora);
+        }
+      }
     },
 
     onLocalMove: (info) => {
@@ -1001,6 +1022,7 @@ function createSessionWithHooks() {
       updatePressureUI();
       audio.play('swapFail');
       announce(`Chegando: ${units} de pressão. Faça um combo para cancelar!`);
+      if (gravador) gravador.incoming(units, snapshotFoco(), Date.now());
       // Ensino no momento exato: a primeira vez que chega pressao, a pessoa e
       // avisada de que pode cancelar. Foi o que os testes com gente mostraram
       // faltar — ninguem descobria o cancelamento sozinho.
@@ -1020,6 +1042,7 @@ function createSessionWithHooks() {
       audio.play('attackTake');
       if (navigator.vibrate) navigator.vibrate(45);
       renderer.floatText(`-${units}`, idx(0, 4), '#ff8a8a', true);
+      if (gravador) gravador.land(units, snapshotFoco(), Date.now());
     },
 
     onTick: () => {
@@ -1092,6 +1115,14 @@ function beginBattle(semente) {
   rng = createMatchRandom(semente, COLS);
   grid = createGrid(rng);
 
+  // Grava esta partida da perspectiva do jogador local (solo ou online).
+  gravador = createGravador({
+    seed: semente >>> 0,
+    players: session.roster.map((p) => ({ id: p.id, name: p.name, isBot: p.isBot })),
+    euId: session.localId,
+    startedAt: Date.now(),
+  });
+
   busy = false;
   selected = null;
   lixoPendente = [];
@@ -1126,6 +1157,15 @@ function finishMatch(winnerId, summary) {
   document.body.classList.remove('perigo-perigo', 'perigo-critico');
   alertaAnterior = 'normal';
 
+  // Fecha o replay desta partida (perspectiva do jogador local). Vale solo E
+  // online — cada cliente gravou a propria partida.
+  let replayDados = null;
+  if (gravador) {
+    gravador.fim(winnerId, summary.won, Date.now());
+    replayDados = gravador.toJSON();
+    gravador = null;
+  }
+
   // A nota so muda contra adversario de forca CONHECIDA. Bot tem nota fixa
   // por dificuldade; humano online entra como desconhecido, porque sem
   // servidor nao ha como saber a nota dele (e o que ele mandasse pela rede
@@ -1150,6 +1190,8 @@ function finishMatch(winnerId, summary) {
     modo: session.isSolo ? 'solo' : 'online',
     nomeAdversario: session.roster.find((p) => p.id !== session.localId)?.name || null,
     contaParaNota: regra.conta,
+    replay: replayDados,
+    resumo: { score: summary.score, apm: summary.apm, bestCombo: summary.bestCombo },
   });
   mostrarVariacaoDeRank({
     notaAntes,
@@ -1224,17 +1266,10 @@ function finishMatch(winnerId, summary) {
     el.recordBanner.classList.add('hidden');
   }
 
-  // Replay: so existe no solo (ver session.js — o anfitriao nao recebe as
-  // jogadas do convidado, entao um replay online seria incompleto).
-  const replay = session.replayDaPartida ? session.replayDaPartida() : null;
-  replayPendente = replay && replay.veredito.valido ? replay.dados : null;
-  el.btnReplay.classList.toggle('hidden', !replayPendente);
+  // Replay desta partida: gravado da perspectiva do jogador, funciona em solo
+  // e online. O botao "Assistir" reproduz na hora, sem codigo.
+  replayPendente = replayDados;
   el.btnWatchReplay.classList.toggle('hidden', !replayPendente);
-  if (replay && !replay.veredito.valido) {
-    // Nao oferecer um replay que nao se reproduz: melhor nao ter do que
-    // entregar um arquivo que mostra outra partida.
-    console.warn('replay descartado:', replay.veredito.motivo);
-  }
 
   // Revanche: no solo sempre; no online, so quem e anfitriao pode reiniciar.
   const podeRevanche = session.isSolo || session.isHost;
@@ -1514,7 +1549,60 @@ function showStats() {
     box.innerHTML = `<span class="stat-value">${item.value}</span><span class="stat-label">${item.label}</span>`;
     el.statsGrid.appendChild(box);
   }
+  renderHistorico();
   openModal('statsModal');
+}
+
+/** Data amigavel: "Hoje 14:32", "Ontem 09:10" ou "23/07 21:05". */
+function formatarQuando(ts) {
+  const d = new Date(ts);
+  const hoje = new Date();
+  const ontem = new Date(hoje);
+  ontem.setDate(hoje.getDate() - 1);
+  const hora = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  if (d.toDateString() === hoje.toDateString()) return 'Hoje ' + hora;
+  if (d.toDateString() === ontem.toDateString()) return 'Ontem ' + hora;
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) + ' ' + hora;
+}
+
+/** Lista das partidas recentes, cada uma com botao de assistir se tem replay. */
+function renderHistorico() {
+  const lista = storage.historico || [];
+  el.histLista.innerHTML = '';
+  if (!lista.length) {
+    el.histLista.innerHTML = '<p class="hist-vazio">Nenhuma partida ainda. Jogue uma!</p>';
+    return;
+  }
+  for (const h of lista.slice(0, 20)) {
+    const row = document.createElement('div');
+    row.className = 'hist-row ' + (h.venceu ? 'venceu' : 'perdeu');
+
+    const adv = h.adversario ? 'vs ' + h.adversario : h.modo === 'online' ? 'Online' : 'Solo';
+    const pts = h.resumo && h.resumo.score != null ? ` · ${h.resumo.score} pts` : '';
+    const info = document.createElement('span');
+    info.className = 'hist-info';
+    info.innerHTML = `<strong>${adv}</strong><small>${formatarQuando(h.quando)}${pts}</small>`;
+
+    const res = document.createElement('span');
+    res.className = 'hist-res';
+    res.textContent = h.venceu ? '🏆' : '💥';
+
+    row.appendChild(res);
+    row.appendChild(info);
+
+    if (ehReplayPessoal(h.replay)) {
+      const btn = document.createElement('button');
+      btn.className = 'hist-assistir';
+      btn.textContent = '▶ Assistir';
+      btn.addEventListener('click', () => {
+        audio.play('tap');
+        closeModal('statsModal');
+        assistirReplay(h.replay);
+      });
+      row.appendChild(btn);
+    }
+    el.histLista.appendChild(row);
+  }
 }
 
 /**
@@ -1780,38 +1868,6 @@ el.replaySpeed.addEventListener('click', () => {
 el.replayExit.addEventListener('click', () => {
   audio.play('tap');
   sairDoReplay();
-});
-
-el.btnAssistir.addEventListener('click', () => {
-  audio.play('tap');
-  el.replayInput.value = '';
-  openModal('pasteReplayModal');
-});
-
-$('btnPlayPasted').addEventListener('click', () => {
-  const txt = el.replayInput.value.trim();
-  if (!txt) return;
-  let dados;
-  try {
-    dados = desserializar(txt);
-  } catch {
-    alert('Código de replay inválido.');
-    return;
-  }
-  closeModal('pasteReplayModal');
-  assistirReplay(dados);
-});
-
-el.btnReplay.addEventListener('click', async () => {
-  if (!replayPendente) return;
-  audio.play('tap');
-  try {
-    await navigator.clipboard.writeText(JSON.stringify(replayPendente));
-    el.btnReplay.textContent = '✅ Replay copiado!';
-  } catch {
-    el.btnReplay.textContent = '⚠️ Não consegui copiar';
-  }
-  setTimeout(() => (el.btnReplay.textContent = '💾 Copiar replay desta partida'), 2200);
 });
 
 el.btnRematch.addEventListener('click', () => {

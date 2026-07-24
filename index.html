@@ -98,8 +98,6 @@
     <button id="btnEditName" class="name-chip">
       Jogando como <strong id="menuPlayerName">—</strong> <span class="pencil" data-icone="editar"></span>
     </button>
-
-    <button id="btnAssistir" class="name-chip">▶ Assistir um replay</button>
   </section>
 
   <!-- ================= SOLO ================= -->
@@ -243,7 +241,6 @@
       <div class="record-banner hidden" id="recordBanner"></div>
 
       <button id="btnWatchReplay" class="mini-btn wide hidden">▶ Assistir esta partida</button>
-      <button id="btnReplay" class="mini-btn wide hidden">💾 Copiar replay desta partida</button>
       <button id="btnRematch" class="big-btn primary hidden">Jogar de novo</button>
       <button id="btnBackLobby" class="big-btn">Voltar ao menu</button>
     </div>
@@ -314,6 +311,8 @@
   <div class="modal-card">
     <h2 id="statsTitle">📊 Estatísticas</h2>
     <div class="stats-grid" id="statsGrid"></div>
+    <h3 class="hist-titulo">Partidas recentes</h3>
+    <div id="histLista" class="hist-lista"></div>
     <button id="btnResetStats" class="mini-btn danger">Zerar estatísticas</button>
     <button class="close-btn" data-close-modal>Fechar</button>
   </div>
@@ -390,16 +389,6 @@
   <button id="replaySpeed" class="replay-ctrl" aria-label="Velocidade">1x</button>
   <div class="replay-progress"><i id="replayProgress"></i></div>
   <button id="replayExit" class="replay-ctrl" aria-label="Sair do replay">✕</button>
-</div>
-
-<div id="pasteReplayModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="prTitle">
-  <div class="modal-card">
-    <h2 id="prTitle">▶ Assistir replay</h2>
-    <p class="modal-sub">Cole o código de um replay (o botão "Copiar replay" gera um) para assistir a partida.</p>
-    <textarea id="replayInput" class="text-input" rows="4" placeholder="Cole o código do replay aqui..." style="resize:none;font-family:monospace;font-size:0.75rem"></textarea>
-    <button id="btnPlayPasted" class="close-btn">Assistir</button>
-    <button class="mini-btn wide" data-close-modal>Cancelar</button>
-  </div>
 </div>
 
 <script src="vendor/peerjs.min.js"></script>

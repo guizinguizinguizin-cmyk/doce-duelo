@@ -1723,3 +1723,66 @@ body.modo-leve .brand-mark { animation: none; }
 /* No modo replay, esconde os controles de jogo (dica, sair) da tela de batalha
    — quem assiste nao joga. */
 body.modo-replay .battle-actions { display: none; }
+
+/* ============================================================
+   Historico de partidas (dentro das Estatisticas)
+   ============================================================ */
+.hist-titulo {
+  font-size: 0.95rem;
+  margin: 20px 0 10px;
+  text-align: left;
+  color: var(--muted);
+}
+.hist-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.hist-vazio {
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding: 10px 0;
+}
+.hist-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--edge);
+  border-left: 3px solid transparent;
+  text-align: left;
+}
+.hist-row.venceu { border-left-color: #46d98a; }
+.hist-row.perdeu { border-left-color: #ff6b6b; }
+.hist-res { font-size: 1.15rem; line-height: 1; }
+.hist-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.hist-info strong {
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hist-info small { color: var(--muted); font-size: 0.72rem; }
+.hist-assistir {
+  flex-shrink: 0;
+  border: 1px solid rgba(122, 162, 255, 0.5);
+  background: rgba(122, 162, 255, 0.14);
+  color: #cdd9ff;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.1s ease, background 0.15s ease;
+}
+.hist-assistir:hover { background: rgba(122, 162, 255, 0.24); }
+.hist-assistir:active { transform: scale(0.95); }

@@ -327,17 +327,65 @@ try {
 
   if (fim) {
     ok('partida solo chegou ao fim');
-    const temReplay = await pagina.locator('#btnReplay:not(.hidden)').count();
+    const temReplay = await pagina.locator('#btnWatchReplay:not(.hidden)').count();
     if (temReplay) {
-      ok('replay gravado e aprovado na propria verificacao');
+      ok('replay desta partida foi oferecido');
     } else {
-      falhar('o replay nao foi oferecido — ou nao gravou, ou nao se reproduz');
+      falhar('o replay nao foi oferecido — nao gravou');
     }
   } else {
     falhar('a partida nao terminou em 3 minutos');
   }
 
   await pagina.screenshot({ path: 'scripts/.saida/fim.png' });
+
+  // ---- historico: a partida aparece e da para assistir direto (sem codigo) ----
+  await pagina.locator('#btnBackLobby').click();
+  await pagina.waitForSelector('#screenMenu:not(.hidden)', { timeout: 8000 });
+  await pagina.locator('#btnStats').click();
+  await pagina.waitForSelector('#statsModal:not(.hidden)', { timeout: 8000 });
+  const linhas = await pagina.locator('#histLista .hist-row').count();
+  const botaoAssistir = pagina.locator('#histLista .hist-assistir').first();
+  if (linhas > 0 && (await botaoAssistir.count())) {
+    ok(`historico lista a partida (${linhas}) com botao de assistir`);
+    await botaoAssistir.click();
+    const abriu = await pagina
+      .waitForSelector('#replayBar:not(.hidden)', { timeout: 8000 })
+      .then(() => true, () => false);
+    if (abriu) {
+      // introDrop (~1s) + primeiro intervalo (ate 1s) atrasam a barra. Espera a
+      // barra andar OU o replay (curto) ja ter terminado e voltado ao menu.
+      let pct = 0;
+      let terminou = false;
+      for (let i = 0; i < 20; i++) {
+        await sleep(400);
+        const barraSumiu = await pagina.locator('#replayBar.hidden').count();
+        if (barraSumiu) {
+          terminou = true;
+          break;
+        }
+        const largura = await pagina.locator('#replayProgress').evaluate((n) => n.style.width);
+        pct = parseFloat(largura) || 0;
+        if (pct > 0) break;
+      }
+      const cores = await pagina.evaluate(() => {
+        const cv = document.getElementById('boardCanvas');
+        if (!cv) return 0;
+        const ctx = cv.getContext('2d');
+        const d = ctx.getImageData(0, 0, cv.width, cv.height).data;
+        const set = new Set();
+        for (let i = 0; i < d.length; i += 4) set.add(`${d[i]},${d[i + 1]},${d[i + 2]}`);
+        return set.size;
+      });
+      if (pct > 0 || terminou) ok(`replay do historico reproduz (progresso ${pct}%, ${cores} cores)`);
+      else falhar(`replay do historico nao reproduziu (progresso ${pct}%, ${cores} cores)`);
+      if (!terminou) await pagina.locator('#replayExit').click();
+    } else {
+      falhar('clicar em assistir no historico nao abriu o replay');
+    }
+  } else {
+    falhar('o historico nao listou a partida jogada');
+  }
 
   // ---- o lixo aparece no tabuleiro? ----
   // Contra o bot mais forte a partida acabou de terminar, entao ambos os lados

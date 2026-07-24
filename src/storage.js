@@ -11,6 +11,13 @@ const KEY = 'doceduelo:v2';
 /** Quantas partidas o historico guarda, para o perfil nao crescer sem fim. */
 const HISTORICO_MAXIMO = 50;
 
+/**
+ * Quantas partidas guardam o REPLAY inteiro (alguns KB cada). As mais antigas
+ * seguem no historico como resumo, mas soltam o replay para o localStorage nao
+ * estourar. Cobre "assistir a partida de hoje" com folga.
+ */
+const REPLAYS_GUARDADOS = 12;
+
 const DEFAULTS = {
   name: '',
   stats: {
@@ -153,7 +160,7 @@ export const storage = {
    * Registra o resultado de uma partida na nota.
    * `adversario` = { rating, desvio }: bot com nota fixa, ou humano desconhecido.
    */
-  registrarResultado({ venceu, adversario, modo, nomeAdversario, contaParaNota = true }) {
+  registrarResultado({ venceu, adversario, modo, nomeAdversario, contaParaNota = true, replay = null, resumo = null }) {
     const antes = this.rating;
     // Vitoria esvaziada (adversario fraco demais, ou teto do solo) nao mexe na
     // nota, mas ainda entra no historico — a partida aconteceu.
@@ -172,9 +179,19 @@ export const storage = {
         adversario: nomeAdversario || null,
         notaAntes: notaExibida(antes),
         notaDepois: notaExibida(depois),
+        resumo: resumo || null,
+        replay: replay || null,
       },
       ...(cache.historico || []),
     ].slice(0, HISTORICO_MAXIMO);
+
+    // Retencao dos replays: so os mais recentes seguram o arquivo pesado.
+    let comReplay = 0;
+    for (const h of cache.historico) {
+      if (!h.replay) continue;
+      comReplay += 1;
+      if (comReplay > REPLAYS_GUARDADOS) h.replay = null;
+    }
 
     persist();
     return { antes, depois };

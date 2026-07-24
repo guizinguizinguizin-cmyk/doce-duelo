@@ -231,7 +231,7 @@ export function drawGem(ctx, cx, cy, radius, type, special = 0, time = 0) {
   const sub = ctx.createRadialGradient(cx, cy + r * 0.5, r * 0.08, cx, cy + r * 0.5, r * 1.15);
   sub.addColorStop(0, gem.light);
   sub.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.globalAlpha = 0.4;
+  ctx.globalAlpha = 0.26;
   ctx.fillStyle = sub;
   ctx.fillRect(cx - r * 1.3, cy - r * 1.3, r * 2.6, r * 2.6);
   ctx.restore();

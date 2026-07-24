@@ -10,7 +10,7 @@
 //
 // Trocar CACHE_NAME a cada versao publicada: o activate limpa os antigos.
 
-const CACHE_NAME = 'doce-duelo-v3';
+const CACHE_NAME = 'doce-duelo-v4';
 
 const ASSETS = [
   './',

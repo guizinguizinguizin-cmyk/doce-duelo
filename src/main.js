@@ -2254,4 +2254,38 @@ function boot() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Instalar como app (PWA)
+// ---------------------------------------------------------------------------
+//
+// O Chrome/Edge disparam 'beforeinstallprompt' quando o app e instalavel, mas
+// escondem a opcao no menu do navegador — quase ninguem acha. Guardamos o
+// evento e mostramos um botao PROPRIO no menu, que abre o dialogo nativo.
+// (No iOS/Safari esse evento nao existe: la e Compartilhar -> Adicionar a Tela
+// de Inicio, feito na mao.)
+let promptInstalar = null;
+const btnInstall = $('btnInstall');
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  promptInstalar = e;
+  if (btnInstall) btnInstall.classList.remove('hidden');
+});
+
+window.addEventListener('appinstalled', () => {
+  promptInstalar = null;
+  if (btnInstall) btnInstall.classList.add('hidden');
+});
+
+if (btnInstall) {
+  btnInstall.addEventListener('click', async () => {
+    if (!promptInstalar) return;
+    audio.play('tap');
+    promptInstalar.prompt();
+    await promptInstalar.userChoice;
+    promptInstalar = null;
+    btnInstall.classList.add('hidden');
+  });
+}
+
 boot();

@@ -2053,3 +2053,24 @@ body.modo-espectador #screenBattle::before {
 }
 .tile-icon svg { width: 27px; height: 27px; display: block; }
 .tile-label { font-size: 0.86rem; font-weight: 700; line-height: 1.2; }
+
+/* Botao de instalar o PWA (aparece so quando o navegador diz que da). */
+.install-chip {
+  margin-top: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(69, 217, 255, 0.42);
+  background: rgba(69, 217, 255, 0.12);
+  color: var(--cyan);
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.2s ease;
+}
+.install-chip:active { transform: scale(0.96); }
+.install-chip:hover { background: rgba(69, 217, 255, 0.2); }
+.install-chip svg { display: block; }

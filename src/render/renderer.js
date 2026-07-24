@@ -40,6 +40,12 @@ export function createRenderer(canvas, options = {}) {
   const ctx = canvas.getContext('2d', { alpha: true });
   const particles = createParticleSystem();
 
+  // Buffer de bloom: uma copia reduzida do quadro que, borrada e somada por
+  // cima, faz as pecas e os efeitos "vazarem" luz. E o passe que mais aproxima
+  // o visual de um jogo AAA. Meia resolucao (barato) e desligado no modo leve.
+  const bloomCanvas = document.createElement('canvas');
+  const bloomCtx = bloomCanvas.getContext('2d');
+
   let reducedMotion = !!options.reducedMotion;
   let dpr = 1;
   let cssWidth = 0;
@@ -97,6 +103,35 @@ export function createRenderer(canvas, options = {}) {
     canvas.width = Math.round(width * dpr);
     canvas.height = Math.round(cssHeight * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    // Buffer de bloom em meia resolucao.
+    bloomCanvas.width = Math.max(1, Math.round(canvas.width / 2));
+    bloomCanvas.height = Math.max(1, Math.round(canvas.height / 2));
+  }
+
+  /**
+   * Passe de bloom: reduz o quadro, borra e soma de volta. Os pontos claros
+   * (pecas, brilhos, particulas) espalham um halo; as areas escuras somam quase
+   * nada. E o que da a sensacao de luz de verdade, sem shader nenhum.
+   */
+  function applyBloom() {
+    const bw = bloomCanvas.width;
+    const bh = bloomCanvas.height;
+    if (bw < 2 || bh < 2) return;
+
+    bloomCtx.setTransform(1, 0, 0, 1, 0, 0);
+    bloomCtx.globalCompositeOperation = 'source-over';
+    bloomCtx.clearRect(0, 0, bw, bh);
+    bloomCtx.drawImage(canvas, 0, 0, bw, bh);
+
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.45;
+    ctx.filter = 'blur(7px)';
+    ctx.drawImage(bloomCanvas, 0, 0, canvas.width, canvas.height);
+    ctx.filter = 'none';
+    ctx.restore();
   }
 
   const cellX = (col) => BOARD_PAD + col * pitch + cellSize / 2;
@@ -838,6 +873,11 @@ export function createRenderer(canvas, options = {}) {
     drawSprites();
     particles.draw(ctx);
     drawEffects();
+
+    // Bloom sobre a cena (antes dos numeros e do flash, para o texto ficar
+    // nitido). So no modo cheio — no leve o custo nao compensa.
+    if (!reducedMotion) applyBloom();
+
     drawFloatTexts();
 
     if (flashAlpha > 0.001 && flashColor) {

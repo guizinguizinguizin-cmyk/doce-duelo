@@ -221,6 +221,21 @@ export function drawGem(ctx, cx, cy, radius, type, special = 0, time = 0) {
     drawStripes(ctx, cx, cy, r, special === 1);
   }
 
+  // Luz interna (subsurface): a luz atravessa o doce e reacende a metade de
+  // baixo na cor da propria peca. E o que da o aspecto de bala/gel, em vez de
+  // plastico chapado.
+  ctx.save();
+  shapePath(ctx, gem.shape, cx, cy, r);
+  ctx.clip();
+  ctx.globalCompositeOperation = 'lighter';
+  const sub = ctx.createRadialGradient(cx, cy + r * 0.5, r * 0.08, cx, cy + r * 0.5, r * 1.15);
+  sub.addColorStop(0, gem.light);
+  sub.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.globalAlpha = 0.4;
+  ctx.fillStyle = sub;
+  ctx.fillRect(cx - r * 1.3, cy - r * 1.3, r * 2.6, r * 2.6);
+  ctx.restore();
+
   // Contorno interno claro: "borda de bala", faz a peca parecer solida.
   shapePath(ctx, gem.shape, cx, cy, r);
   ctx.strokeStyle = 'rgba(255,255,255,0.34)';

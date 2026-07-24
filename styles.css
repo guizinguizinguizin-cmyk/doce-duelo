@@ -641,9 +641,14 @@ main {
 
 .my-score {
   font-weight: 800;
-  font-size: 1.35rem;
+  font-size: 1.4rem;
   font-family: 'Consolas', ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
+  background: linear-gradient(180deg, #fff 30%, var(--accent-soft) 120%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 1px 6px rgba(255, 143, 184, 0.35));
 }
 
 .my-score.bump { animation: scoreBump 0.3s ease-out; }
@@ -691,6 +696,9 @@ main {
   border-radius: 11px;
   overflow: hidden;
   border: 1px solid var(--edge);
+  /* Poco fundo: sombra interna para a barra parecer preencher um trilho, nao
+     ficar colada por cima. */
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.6), inset 0 -1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .bar-fill-h {
@@ -700,8 +708,27 @@ main {
   height: 100%;
   width: 0%;
   border-radius: 10px;
-  transition: width 0.3s cubic-bezier(0.22, 1, 0.36, 1), background 0.4s ease;
+  transition: width 0.3s cubic-bezier(0.22, 1, 0.36, 1), background 0.4s ease, box-shadow 0.4s ease;
   background: linear-gradient(90deg, var(--safe), #7fe0a8);
+  /* Vidro: risco de luz no topo, sombra embaixo e um halo na cor da barra. */
+  box-shadow: 0 0 12px rgba(53, 217, 139, 0.5), inset 0 1.5px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -5px 7px rgba(0, 0, 0, 0.28);
+}
+
+/* Reflexo que percorre a barra devagar — vida sem custo de leitura. */
+.bar-fill-h::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.35) 48%, transparent 62%);
+  background-size: 220% 100%;
+  animation: barShine 3.2s ease-in-out infinite;
+}
+
+@keyframes barShine {
+  0% { background-position: 160% 0; }
+  60%, 100% { background-position: -60% 0; }
 }
 
 /* Pressão pendente: encostada no fim da pressão atual, listrada e em
@@ -729,10 +756,20 @@ main {
   to { background-position: 17px 0; }
 }
 
-.bar-fill-h.atencao { background: linear-gradient(90deg, var(--warn), #ffd07a); }
-.bar-fill-h.perigo { background: linear-gradient(90deg, #ff7043, var(--danger)); }
+.bar-fill-h.atencao {
+  background: linear-gradient(90deg, var(--warn), #ffd07a);
+  box-shadow: 0 0 13px rgba(255, 179, 64, 0.6), inset 0 1.5px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -5px 7px rgba(0, 0, 0, 0.28);
+}
+.bar-fill-h.perigo {
+  background: linear-gradient(90deg, #ff7043, var(--danger));
+  box-shadow: 0 0 15px rgba(255, 77, 77, 0.65), inset 0 1.5px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -5px 7px rgba(0, 0, 0, 0.3);
+}
 .bar-fill-h.critico {
   background: linear-gradient(90deg, var(--danger), #ff8a8a);
+  box-shadow: 0 0 22px rgba(255, 77, 77, 0.9), inset 0 1.5px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -5px 7px rgba(0, 0, 0, 0.3);
   animation: barPulse 0.55s ease-in-out infinite;
 }
 
@@ -1827,4 +1864,39 @@ body.modo-espectador #screenBattle::before {
   pointer-events: none;
   box-shadow: inset 0 0 90px rgba(255, 60, 60, 0.28);
   z-index: 3;
+}
+
+/* ============================================================
+   Atmosfera na batalha + brilho do menu (pente-fino AAA)
+   ============================================================ */
+
+/* Halo de luz ambiente atras do tabuleiro: as margens da tela de batalha
+   deixam de ser mortas e o tabuleiro parece assentado numa fonte de luz. */
+.board-wrap::before {
+  content: '';
+  position: absolute;
+  inset: -14% -10%;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 50% 46%, rgba(255, 77, 141, 0.18),
+    rgba(69, 217, 255, 0.09) 46%, transparent 72%);
+  filter: blur(26px);
+}
+
+/* CTA principal do menu respira luz, para o olho ir direto no "jogar". */
+.menu-btn.primary {
+  animation: ctaGlow 3.6s ease-in-out infinite;
+}
+@keyframes ctaGlow {
+  0%, 100% { box-shadow: 0 6px 22px rgba(255, 45, 120, 0.16); }
+  50% { box-shadow: 0 8px 34px rgba(255, 45, 120, 0.42); }
+}
+
+/* Cartoes e botoes ganham um realce sutil no ponteiro (desktop/web). */
+.menu-btn:hover { border-color: var(--accent-soft); transform: translateY(-1px); }
+.big-btn.primary:hover { filter: brightness(1.06); }
+
+@media (prefers-reduced-motion: reduce) {
+  .menu-btn.primary { animation: none; }
+  .bar-fill-h::after { animation: none; }
 }

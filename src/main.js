@@ -615,12 +615,15 @@ async function playPhases(phases) {
 
     // A intensidade do tranco cresce com a cascata: uma cascata de 6 tem que
     // SENTIR diferente de uma trinca simples, senao o jogador nao percebe que
-    // fez algo grande.
+    // fez algo grande. O soco de camera acompanha — toda jogada "bate".
+    renderer.punchCamera(Math.min(0.085, 0.016 + phase.cascade * 0.012 + phase.activations.length * 0.02 + phase.cleared.length * 0.003));
     if (phase.cascade >= 2 || phase.activations.length) {
-      renderer.shake(Math.min(16, 2.5 * phase.cascade + phase.activations.length * 2.5));
+      renderer.shake(Math.min(20, 3 * phase.cascade + phase.activations.length * 3));
     }
-    if (phase.cascade >= 4) {
-      renderer.flash('rgba(255,255,255,0.30)', 0.3);
+    if (phase.cascade >= 3) {
+      // Flash mais forte quanto maior a cascata, com um tom quente de festa.
+      const intensidade = Math.min(0.5, 0.16 + phase.cascade * 0.06);
+      renderer.flash(`rgba(255,240,210,${intensidade})`, 0.32);
       announce(`Cascata ${phase.cascade}!`);
     }
 

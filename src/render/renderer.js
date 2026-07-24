@@ -69,6 +69,9 @@ export function createRenderer(canvas, options = {}) {
   let flashColor = null;
   let flashAlpha = 0;
   let dangerLevel = 0;
+  // Soco de camera: um zoom-bump curto no tabuleiro a cada jogada, mais forte
+  // nas cascatas. E o que faz o impacto "bater" em vez de so aparecer.
+  let punch = 0;
 
   let time = 0;
   let rafId = null;
@@ -365,6 +368,21 @@ export function createRenderer(canvas, options = {}) {
         ctx.fillStyle = fx.color;
         ctx.fillRect(0, 0, cssWidth, canvas.height);
         ctx.restore();
+      } else if (fx.type === 'pop') {
+        // Estalo aditivo na casa da peca que sumiu: acende e apaga rapido.
+        const rad = cellSize * (0.32 + t * 0.75);
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = alpha * 0.7;
+        const g = ctx.createRadialGradient(fx.x, fx.y, 0, fx.x, fx.y, rad);
+        g.addColorStop(0, fx.color);
+        g.addColorStop(0.45, fx.color);
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(fx.x, fx.y, rad, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
       }
     }
   }
@@ -511,8 +529,11 @@ export function createRenderer(canvas, options = {}) {
     const x = cellX(colOf(index));
     const y = cellY(rowOf(index));
     const color = special === 4 ? '#ffffff' : (GEM_TYPES[type] || GEM_TYPES[0]).base;
-    particles.emit({ x, y, count: reducedMotion ? 3 : 9, color, speed: 250, size: cellSize * 0.16, life: 0.5 });
-    particles.emit({ x, y, count: reducedMotion ? 2 : 5, color: '#ffffff', speed: 170, size: cellSize * 0.1, life: 0.35, shape: 'circle' });
+    particles.emit({ x, y, count: reducedMotion ? 3 : 13, color, speed: 300, size: cellSize * 0.17, life: 0.55 });
+    particles.emit({ x, y, count: reducedMotion ? 2 : 6, color: '#ffffff', speed: 200, size: cellSize * 0.11, life: 0.4, shape: 'circle' });
+    // Estalo de luz na casa: um circulo aditivo curto na cor da peca. Somado ao
+    // bloom, faz cada peca que some "acender" — o que a trinca simples nao tinha.
+    addEffect({ type: 'pop', x, y, maxLife: 0.24, color });
   }
 
   /**
@@ -855,6 +876,8 @@ export function createRenderer(canvas, options = {}) {
       if (shakeMag < 0.05) shakeMag = 0;
     }
     if (flashAlpha > 0.001) flashAlpha *= Math.pow(0.02, dt);
+    if (punch > 0.0005) punch *= Math.pow(0.01, dt);
+    else punch = 0;
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -865,6 +888,15 @@ export function createRenderer(canvas, options = {}) {
       ox = (Math.random() - 0.5) * shakeMag;
       oy = (Math.random() - 0.5) * shakeMag;
       ctx.translate(ox, oy);
+    }
+    // Zoom-bump em torno do centro do tabuleiro.
+    if (punch > 0.0005) {
+      const cx = cssWidth / 2;
+      const cy = (BOARD_PAD * 2 + cellSize * ROWS + CELL_GAP * (ROWS - 1)) / 2;
+      const s = 1 + punch;
+      ctx.translate(cx, cy);
+      ctx.scale(s, s);
+      ctx.translate(-cx, -cy);
     }
 
     drawBoardBackground();
@@ -881,12 +913,20 @@ export function createRenderer(canvas, options = {}) {
     drawFloatTexts();
 
     if (flashAlpha > 0.001 && flashColor) {
+      // Sem shake/zoom: cobre o quadro inteiro independentemente do soco.
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.save();
       ctx.globalAlpha = Math.min(1, flashAlpha);
       ctx.fillStyle = flashColor;
-      ctx.fillRect(-ox, -oy, cssWidth, canvas.height);
+      ctx.fillRect(0, 0, cssWidth, canvas.height / dpr);
       ctx.restore();
     }
+  }
+
+  /** Zoom-bump curto. `amount` ~0.02 (jogada) a ~0.08 (cascatao). */
+  function punchCamera(amount) {
+    if (reducedMotion) return;
+    punch = Math.min(0.09, punch + amount);
   }
 
   function start() {
@@ -973,6 +1013,7 @@ export function createRenderer(canvas, options = {}) {
     showCombo,
     shake,
     flash,
+    punchCamera,
     setDanger,
     pointerToCell,
     setReducedMotion,

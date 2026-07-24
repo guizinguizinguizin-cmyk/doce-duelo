@@ -130,7 +130,7 @@ export function createRenderer(canvas, options = {}) {
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = 0.28;
+    ctx.globalAlpha = 0.16;
     ctx.filter = 'blur(7px)';
     ctx.drawImage(bloomCanvas, 0, 0, canvas.width, canvas.height);
     ctx.filter = 'none';

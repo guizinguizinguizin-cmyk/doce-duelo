@@ -206,10 +206,11 @@ export function drawGem(ctx, cx, cy, radius, type, special = 0, time = 0) {
 
   if (special === 3) drawWrappedGlow(ctx, cx, cy, r, time);
 
-  // Corpo
+  // Corpo. A cor-base domina cedo (a luz clara so no ponto alto), para a peca
+  // ficar SATURADA em vez de lavada.
   const grad = ctx.createRadialGradient(cx - r * 0.34, cy - r * 0.4, r * 0.08, cx, cy, r * 1.18);
   grad.addColorStop(0, gem.light);
-  grad.addColorStop(0.48, gem.base);
+  grad.addColorStop(0.3, gem.base);
   grad.addColorStop(1, gem.dark);
 
   shapePath(ctx, gem.shape, cx, cy, r);
@@ -231,7 +232,7 @@ export function drawGem(ctx, cx, cy, radius, type, special = 0, time = 0) {
   const sub = ctx.createRadialGradient(cx, cy + r * 0.5, r * 0.08, cx, cy + r * 0.5, r * 1.15);
   sub.addColorStop(0, gem.light);
   sub.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.globalAlpha = 0.26;
+  ctx.globalAlpha = 0.14;
   ctx.fillStyle = sub;
   ctx.fillRect(cx - r * 1.3, cy - r * 1.3, r * 2.6, r * 2.6);
   ctx.restore();
@@ -246,12 +247,12 @@ export function drawGem(ctx, cx, cy, radius, type, special = 0, time = 0) {
   ctx.save();
   shapePath(ctx, gem.shape, cx, cy, r);
   ctx.clip();
-  ctx.globalAlpha = 0.5;
+  ctx.globalAlpha = 0.38;
   ctx.fillStyle = '#fff';
   ctx.beginPath();
-  ctx.ellipse(cx - r * 0.3, cy - r * 0.42, r * 0.34, r * 0.2, -0.5, 0, Math.PI * 2);
+  ctx.ellipse(cx - r * 0.3, cy - r * 0.42, r * 0.32, r * 0.18, -0.5, 0, Math.PI * 2);
   ctx.fill();
-  ctx.globalAlpha = 0.9;
+  ctx.globalAlpha = 0.82;
   ctx.beginPath();
   ctx.arc(cx - r * 0.38, cy - r * 0.46, r * 0.1, 0, Math.PI * 2);
   ctx.fill();

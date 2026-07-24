@@ -379,7 +379,20 @@ try {
       });
       if (pct > 0 || terminou) ok(`replay do historico reproduz (progresso ${pct}%, ${cores} cores)`);
       else falhar(`replay do historico nao reproduziu (progresso ${pct}%, ${cores} cores)`);
-      if (!terminou) await pagina.locator('#replayExit').click();
+
+      // Trocar de perspectiva: clicar na miniatura do bot muda o foco.
+      if (!terminou) {
+        const nomeAntes = await pagina.locator('#myNameLabel').innerText();
+        const mini = pagina.locator('.opponent-card').first();
+        if (await mini.count()) {
+          await mini.click();
+          await sleep(1400);
+          const nomeDepois = await pagina.locator('#myNameLabel').innerText();
+          if (nomeDepois && nomeDepois !== nomeAntes) ok(`troca de perspectiva no replay (${nomeAntes} -> ${nomeDepois})`);
+          else falhar(`clicar na miniatura nao trocou a perspectiva (${nomeAntes} -> ${nomeDepois})`);
+        }
+        await pagina.locator('#replayExit').click();
+      }
     } else {
       falhar('clicar em assistir no historico nao abriu o replay');
     }

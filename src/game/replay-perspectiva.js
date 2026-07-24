@@ -31,8 +31,8 @@ import { createGrid, COLS } from '../core/board.js';
 
 export const REPLAY_PESSOAL_VERSAO = 2;
 
-/** Intervalo minimo entre fotos do mesmo adversario, para o arquivo nao inchar. */
-const THROTTLE_OP_MS = 450;
+/** Intervalo minimo entre fotos do mesmo jogador, para o arquivo nao inchar. */
+const THROTTLE_SNAP_MS = 220;
 
 export function createGravador({ seed, players, euId, startedAt = 0 }) {
   const eventos = [];
@@ -69,13 +69,30 @@ export function createGravador({ seed, players, euId, startedAt = 0 }) {
     land(units, st, t) {
       eventos.push({ t: marcar(t), k: 'land', units, st });
     },
-    /** Foto do estado de um adversario (para a miniatura). Limitada no tempo. */
-    opponent(id, score, pressure, alive, tipos, t) {
+    /**
+     * Foto do tabuleiro/estado de UM jogador (inclusive o proprio). E o que
+     * permite, ao assistir, ver a partida da perspectiva de qualquer um: o
+     * tabuleiro grande do foco vem destas fotos, e as miniaturas dos outros
+     * tambem. Deduplicada (nada mudou = nao grava) e limitada no tempo.
+     */
+    snap(id, score, pressure, alive, tipos, t) {
       const agora = rel(t);
+      const s = Math.round(score) + '|' + Math.round(pressure) + '|' + (alive ? 1 : 0) + '|' + (tipos ? tipos.join(',') : '');
       const anterior = ultimoOp.get(id);
-      if (anterior && agora - anterior.t < THROTTLE_OP_MS && anterior.alive === alive) return;
-      ultimoOp.set(id, { t: agora, alive });
-      eventos.push({ t: marcar(t), k: 'op', id, score, pressure, alive, tipos: tipos || null });
+      if (anterior) {
+        if (anterior.sig === s) return; // nada mudou: nao vale um evento
+        if (agora - anterior.t < THROTTLE_SNAP_MS && anterior.alive === alive) return;
+      }
+      ultimoOp.set(id, { t: agora, alive, sig: s });
+      eventos.push({
+        t: marcar(t),
+        k: 'snap',
+        id,
+        score: Math.round(score),
+        pressure: Math.round(pressure),
+        alive,
+        tipos: tipos || null,
+      });
     },
     fim(vId, ganhou, t) {
       vencedorId = vId;

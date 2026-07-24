@@ -105,14 +105,14 @@ test('os estados carimbados sobrevivem a serializacao', () => {
 test('fotos do adversario sao limitadas no tempo, mas passam na troca de estado', () => {
   const grav = createGravador({ seed: 1, players: [{ id: 'me', name: 'Eu' }, { id: 'bot', name: 'Bot' }], euId: 'me', startedAt: 0 });
   // Rajada de fotos muito juntas: so a primeira entra.
-  grav.opponent('bot', 10, 1, true, null, 0);
-  grav.opponent('bot', 11, 1, true, null, 50);
-  grav.opponent('bot', 12, 1, true, null, 100);
-  let fotos = grav.toJSON().eventos.filter((e) => e.k === 'op');
+  grav.snap('bot', 10, 1, true, null, 0);
+  grav.snap('bot', 11, 1, true, null, 50);
+  grav.snap('bot', 12, 1, true, null, 100);
+  let fotos = grav.toJSON().eventos.filter((e) => e.k === 'snap');
   assert.equal(fotos.length, 1, 'fotos muito proximas devem ser filtradas');
 
   // Mudar de vivo para eliminado sempre registra, mesmo dentro do intervalo.
-  grav.opponent('bot', 12, 26, false, null, 120);
-  fotos = grav.toJSON().eventos.filter((e) => e.k === 'op');
+  grav.snap('bot', 12, 26, false, null, 120);
+  fotos = grav.toJSON().eventos.filter((e) => e.k === 'snap');
   assert.equal(fotos.length, 2, 'a eliminacao do adversario nunca pode ser descartada');
 });

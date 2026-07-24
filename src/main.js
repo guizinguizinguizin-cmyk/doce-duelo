@@ -299,6 +299,10 @@ function buildOpponentCard(player) {
   card.append(name, board, track, score);
   el.opponentsRow.appendChild(card);
 
+  // Clicar num jogador amplia a visao dele — no espectador ao vivo e no replay.
+  // Em jogo normal nao faz nada (aoClicarJogador so age nesses modos).
+  card.addEventListener('click', () => aoClicarJogador(player.id));
+
   const refs = { card, name, cells, fill, score };
   opponentCards.set(player.id, refs);
   return refs;
@@ -655,6 +659,102 @@ function snapshotFoco() {
   };
 }
 
+/** Grava a foto do MEU tabuleiro (para eu virar miniatura na visao dos outros). */
+function gravarMeuSnap() {
+  if (gravador && session) {
+    gravador.snap(session.localId, session.localScore, session.pressure, true, serializeTypes(grid), Date.now());
+  }
+}
+
+// Um grid so-para-desenho a partir das cores (serializeTypes). E o que deixa o
+// tabuleiro do adversario aparecer grande e de verdade — com as pecas do jogo,
+// nao quadradinhos — tanto ao assistir quanto no espectador ao vivo.
+function gridDeSnapshot(tipos) {
+  const g = new Array(CELL_COUNT).fill(null);
+  if (!tipos) return g;
+  for (let i = 0; i < CELL_COUNT; i++) {
+    const code = tipos[i];
+    if (code == null) continue;
+    if (code >= GEM_COLORS.length) {
+      // A foto nao guarda o tipo exato do obstaculo; desenha um generico.
+      g[i] = { id: i, type: 0, special: 0, blocker: { tipo: 'pedra', hp: 1 } };
+    } else {
+      g[i] = { id: i, type: code, special: 0, blocker: null };
+    }
+  }
+  return g;
+}
+
+/** Mostra no tabuleiro GRANDE a foto de um jogador (espectador ou replay). */
+function espelharTabuleiro(tipos) {
+  grid = gridDeSnapshot(tipos);
+  renderer.setGrid(grid);
+}
+
+/** Barra grande a partir de uma foto (deriva o nivel de alerta da pressao). */
+function estadoDeSnap(s) {
+  const pressure = s.pressure || 0;
+  const ratio = pressure / PRESSURE_MAX;
+  const alert = ratio >= 0.85 ? 'critico' : ratio >= 0.65 ? 'perigo' : ratio >= 0.4 ? 'atencao' : 'normal';
+  return { pressure, pending: 0, alert, score: s.score || 0 };
+}
+
+// ---------------------------------------------------------------------------
+// Espectador ao vivo (depois de ser eliminado no online)
+// ---------------------------------------------------------------------------
+
+let espectadorAtivo = false;
+let espectadorAlvo = null;
+
+function entrarEspectador() {
+  if (espectadorAtivo) return;
+  espectadorAtivo = true;
+  document.body.classList.add('modo-espectador');
+  audio.play('defeat');
+  if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
+  el.battleHint.textContent = '💥 Você foi eliminado! Assistindo — toque num jogador para ver de perto.';
+  announce('Você foi eliminado. Assistindo o resto da partida.');
+  const vivo = session.roster.find((p) => p.alive && p.id !== session.localId);
+  if (vivo) espectar(vivo.id);
+}
+
+function espectar(id) {
+  espectadorAlvo = id;
+  atualizarEspectador(session.roster);
+}
+
+function atualizarEspectador(roster) {
+  const alvo = roster.find((p) => p.id === espectadorAlvo);
+  if (!alvo || !alvo.alive) {
+    // O alvo caiu: pula para outro que ainda esteja vivo.
+    const outro = roster.find((p) => p.alive && p.id !== session.localId);
+    if (outro && outro.id !== espectadorAlvo) return espectar(outro.id);
+    if (!outro) return;
+  }
+  const foco = roster.find((p) => p.id === espectadorAlvo);
+  if (!foco) return;
+  el.myNameLabel.textContent = 'Assistindo ' + foco.name;
+  espelharTabuleiro(foco.boardTypes);
+  aplicarEstadoReplay(estadoDeSnap({ score: foco.score, pressure: foco.pressure }));
+  // Destaca no rol de miniaturas quem estou assistindo.
+  for (const [id, refs] of opponentCards) refs.card.classList.toggle('assistindo', id === espectadorAlvo);
+}
+
+function sairDoEspectador() {
+  espectadorAtivo = false;
+  espectadorAlvo = null;
+  document.body.classList.remove('modo-espectador');
+}
+
+/** Clique numa miniatura: troca quem estou assistindo (espectador ou replay). */
+function aoClicarJogador(id) {
+  if (replayRodando) trocarPerspectiva(id);
+  else if (espectadorAtivo && id !== session.localId) {
+    audio.play('tap');
+    espectar(id);
+  }
+}
+
 function aplicarEstadoReplay(st) {
   if (!st) return;
   const pend = st.pending || 0;
@@ -670,14 +770,18 @@ function aplicarEstadoReplay(st) {
   el.myScore.textContent = st.score;
   el.incomingBadge.classList.toggle('hidden', pend <= 0);
   if (pend > 0) el.incomingBadge.textContent = '+' + pend;
+  // A borda de perigo do tabuleiro segue a pressao mostrada (mesma conta do
+  // jogo ao vivo). Sem isto, o replay herdaria o perigo da ultima partida.
+  renderer.setDanger(Math.max(0, (st.pressure / PRESSURE_MAX - 0.55) / 0.45));
 }
 
-function montarMinisReplay(replay) {
+function montarMinisReplay(replay, foco) {
   el.opponentsRow.innerHTML = '';
   opponentCards.clear();
   for (const jog of replay.jogadores) {
-    if (jog.id === replay.euId) continue;
-    buildOpponentCard({ id: jog.id, name: jog.name });
+    if (jog.id === foco) continue;
+    const refs = buildOpponentCard({ id: jog.id, name: jog.name });
+    if (refs) refs.card.classList.add('clicavel');
   }
 }
 
@@ -704,6 +808,9 @@ async function animarJogadaReplay(a, b, resultado) {
 
 function sairDoReplay() {
   replayRodando = false;
+  replayGeracao++; // corta qualquer loop de perspectiva ainda rodando
+  replayAtual = null;
+  replayFoco = null;
   document.body.classList.remove('modo-replay');
   el.replayBar.classList.add('hidden');
   session = null;
@@ -711,85 +818,129 @@ function sairDoReplay() {
   refreshRankCard();
 }
 
-async function assistirReplay(replay) {
+// Replay em andamento e de quem e a perspectiva. Uma "geracao" corta o loop
+// antigo quando o jogador troca de perspectiva no meio.
+let replayAtual = null;
+let replayFoco = null;
+let replayGeracao = 0;
+
+/** Troca a perspectiva assistida (clique numa miniatura), do inicio. */
+function trocarPerspectiva(id) {
+  if (!replayAtual || id === replayFoco) return;
+  audio.play('tap');
+  assistirReplay(replayAtual, id);
+}
+
+async function assistirReplay(replay, focoPedido) {
   if (!ehReplayPessoal(replay)) {
     alert('Este replay não está disponível.');
     return;
   }
 
-  const foco = replay.euId;
+  replayAtual = replay;
+  const foco = focoPedido || replay.euId;
+  replayFoco = foco;
+  const geracao = ++replayGeracao;
+  const vivo = () => replayRodando && geracao === replayGeracao;
+
   replayRodando = true;
   replayPausado = false;
   replayVelocidade = 1;
   el.replaySpeed.textContent = '1x';
   el.replayPause.textContent = '⏸';
 
-  // Tabuleiro do jogador, reconstruido da semente. As operacoes gravadas
-  // (move/shuffle/lixo) sao reproduzidas em ordem contra ESTE gerador.
-  const { grid: gReplay, rng: rReplay } = tabuleiroInicial(replay.seed);
-  grid = gReplay;
+  // Assistindo a PROPRIA partida: animada, reconstruida da semente. Assistindo
+  // OUTRO jogador: nao temos as jogadas dele, entao mostramos o tabuleiro dele
+  // pelas fotos gravadas (as pecas de verdade, so sem a animacao da troca).
+  const animado = foco === replay.euId;
+  let rReplay = null;
+  if (animado) {
+    const inicial = tabuleiroInicial(replay.seed);
+    grid = inicial.grid;
+    rReplay = inicial.rng;
+  } else {
+    grid = new Array(CELL_COUNT).fill(null);
+  }
 
   document.body.classList.add('modo-replay');
-  const eu = replay.jogadores.find((p) => p.id === foco);
-  el.myNameLabel.textContent = (eu && eu.name) || 'Você';
-  el.battleHint.textContent = 'Assistindo replay';
+  const nomeDe = (id) => (replay.jogadores.find((p) => p.id === id) || {}).name || 'Jogador';
+  el.myNameLabel.textContent = nomeDe(foco);
+  el.battleHint.textContent =
+    replay.jogadores.length > 1
+      ? 'Assistindo — toque num jogador para ver a perspectiva dele'
+      : 'Assistindo replay';
   showScreen('Battle');
 
   renderer.setGrid(grid);
   renderer.setSelection(null);
   renderer.setHint(null);
-  montarMinisReplay(replay);
+  montarMinisReplay(replay, foco);
   aplicarEstadoReplay({ pressure: 0, pending: 0, alert: 'normal', score: 0 });
   el.replayBar.classList.remove('hidden');
   await renderer.introDrop();
+  if (!vivo()) return;
 
   const dur = Math.max(1, replay.duracao);
   let tAnterior = 0;
 
   for (const ev of replay.eventos) {
-    if (!replayRodando) return;
-    while (replayPausado && replayRodando) await espera(80);
-    if (!replayRodando) return;
+    if (!vivo()) return;
+    while (replayPausado && vivo()) await espera(80);
+    if (!vivo()) return;
 
     // Espera proporcional ao intervalo real, limitada para nao arrastar.
     const gap = Math.min(1000, Math.max(30, ev.t - tAnterior));
     await espera(gap / replayVelocidade);
-    if (!replayRodando) return;
+    if (!vivo()) return;
     tAnterior = ev.t;
     el.replayProgress.style.width = Math.min(100, (ev.t / dur) * 100) + '%';
 
-    if (ev.k === 'move') {
-      const resultado = trySwap(grid, ev.a, ev.b, rReplay);
-      if (resultado.ok) await animarJogadaReplay(ev.a, ev.b, resultado);
-      aplicarEstadoReplay(ev.st);
-    } else if (ev.k === 'shuffle') {
-      shuffleGrid(grid, rReplay);
-      renderer.setGrid(grid);
-      await renderer.introDrop();
-    } else if (ev.k === 'lixo') {
-      injectGarbage(grid, ev.qtd, ev.tipo, rReplay);
-      renderer.setGrid(grid);
-      renderer.shake(6 + ev.qtd * 1.5);
-      audio.play(ev.tipo === 'cadeado' ? 'createSpecial' : 'wrapped');
-      aplicarEstadoReplay(ev.st);
-    } else if (ev.k === 'in') {
-      audio.play('swapFail');
-      aplicarEstadoReplay(ev.st);
-    } else if (ev.k === 'land') {
-      renderer.shake(Math.min(24, 7 + ev.units * 2.2));
-      renderer.flash('rgba(255,60,60,0.42)', 0.5);
-      audio.play('attackTake');
-      aplicarEstadoReplay(ev.st);
-    } else if (ev.k === 'op') {
-      atualizarMiniReplay(ev);
+    if (animado) {
+      // Caminho animado: o proprio jogador.
+      if (ev.k === 'move') {
+        const resultado = trySwap(grid, ev.a, ev.b, rReplay);
+        if (resultado.ok) await animarJogadaReplay(ev.a, ev.b, resultado);
+        aplicarEstadoReplay(ev.st);
+      } else if (ev.k === 'shuffle') {
+        shuffleGrid(grid, rReplay);
+        renderer.setGrid(grid);
+        await renderer.introDrop();
+      } else if (ev.k === 'lixo') {
+        injectGarbage(grid, ev.qtd, ev.tipo, rReplay);
+        renderer.setGrid(grid);
+        renderer.shake(6 + ev.qtd * 1.5);
+        audio.play(ev.tipo === 'cadeado' ? 'createSpecial' : 'wrapped');
+        aplicarEstadoReplay(ev.st);
+      } else if (ev.k === 'in') {
+        audio.play('swapFail');
+        aplicarEstadoReplay(ev.st);
+      } else if (ev.k === 'land') {
+        renderer.shake(Math.min(24, 7 + ev.units * 2.2));
+        renderer.flash('rgba(255,60,60,0.42)', 0.5);
+        audio.play('attackTake');
+        aplicarEstadoReplay(ev.st);
+      } else if (ev.k === 'snap' && ev.id !== foco) {
+        atualizarMiniReplay(ev);
+      }
+    } else {
+      // Caminho por fotos: assistindo OUTRO jogador. So 'snap' importam.
+      if (ev.k === 'snap') {
+        if (ev.id === foco) {
+          if (ev.tipos) espelharTabuleiro(ev.tipos);
+          aplicarEstadoReplay(estadoDeSnap(ev));
+        } else {
+          atualizarMiniReplay(ev);
+        }
+      }
     }
   }
 
-  if (!replayRodando) return;
+  if (!vivo()) return;
   el.replayProgress.style.width = '100%';
-  el.battleHint.textContent = replay.ganhei ? '🏆 Vitória nesta partida' : 'Fim do replay';
+  const ganhouFoco = replay.vencedorId === foco;
+  el.battleHint.textContent = ganhouFoco ? '🏆 Venceu esta partida' : 'Fim do replay';
   await espera(1400);
-  sairDoReplay();
+  if (geracao === replayGeracao) sairDoReplay();
 }
 
 /**
@@ -832,6 +983,7 @@ function aplicarLixo() {
   el.battleHint.textContent = `${ultima.explicacao}. ${COMO_QUEBRAR[ultima.tipo] || ''}`;
   announce(`${ultima.explicacao}: ${total} obstáculo(s) no seu tabuleiro`);
   session.broadcastLocalState();
+  gravarMeuSnap();
 }
 
 async function attemptMove(a, b) {
@@ -891,6 +1043,9 @@ async function attemptMove(a, b) {
   }
 
   busy = false;
+  // Foto do meu tabuleiro apos a jogada (alimenta minha miniatura na visao dos
+  // outros e o assistir da minha perspectiva pelos outros).
+  gravarMeuSnap();
   // O lixo que chegou durante a animacao entra agora.
   aplicarLixo();
 }
@@ -988,15 +1143,18 @@ function createSessionWithHooks() {
     onRosterChange: (roster) => {
       renderOpponents(roster);
       renderRosterList(roster);
-      // Fotos dos adversarios para as miniaturas do replay (limitadas no tempo
-      // pelo proprio gravador). So durante a partida.
+      // Fotos do tabuleiro de cada jogador (para as miniaturas e para poder
+      // assistir da perspectiva deles depois). So durante a partida.
       if (gravador && session && session.active) {
         const agora = Date.now();
         for (const p of roster) {
           if (p.id === session.localId) continue;
-          gravador.opponent(p.id, p.score || 0, p.pressure || 0, p.alive !== false, p.boardTypes || null, agora);
+          gravador.snap(p.id, p.score || 0, p.pressure || 0, p.alive !== false, p.boardTypes || null, agora);
         }
       }
+      // Modo espectador ao vivo (depois de ser eliminado): espelha no tabuleiro
+      // grande o jogador que estou assistindo.
+      if (espectadorAlvo) atualizarEspectador(roster);
     },
 
     onLocalMove: (info) => {
@@ -1043,10 +1201,12 @@ function createSessionWithHooks() {
       if (navigator.vibrate) navigator.vibrate(45);
       renderer.floatText(`-${units}`, idx(0, 4), '#ff8a8a', true);
       if (gravador) gravador.land(units, snapshotFoco(), Date.now());
+      gravarMeuSnap();
     },
 
     onTick: () => {
-      updatePressureUI();
+      // No espectador a barra grande e do jogador assistido, nao minha.
+      if (!espectadorAtivo) updatePressureUI();
       updateDebugPanel();
     },
 
@@ -1064,6 +1224,12 @@ function createSessionWithHooks() {
 
     onLocalEliminated: () => {
       busy = true;
+      // No online, ser eliminado nao pode ser silencioso: avisa e, se a partida
+      // continua com DOIS ou mais ainda vivos, vira espectador. Se so resta um,
+      // a partida ja vai acabar — deixa o fim de jogo mostrar o resultado.
+      if (!session.isSolo && session.active && session.aliveCount >= 2) {
+        entrarEspectador();
+      }
     },
 
     onComboReset: () => updateComboUI(),
@@ -1126,6 +1292,7 @@ function beginBattle(semente) {
   busy = false;
   selected = null;
   lixoPendente = [];
+  sairDoEspectador();
 
   el.myNameLabel.textContent = storage.name || 'Você';
   updateScoreUI(false);
@@ -1151,6 +1318,7 @@ function beginBattle(semente) {
 
 function finishMatch(winnerId, summary) {
   busy = true;
+  sairDoEspectador();
   if (idleTimer) clearTimeout(idleTimer);
   audio.stopMusic();
   audio.setIntensity(0);

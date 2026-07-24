@@ -206,11 +206,11 @@ export function drawGem(ctx, cx, cy, radius, type, special = 0, time = 0) {
 
   if (special === 3) drawWrappedGlow(ctx, cx, cy, r, time);
 
-  // Corpo. A cor-base domina cedo (a luz clara so no ponto alto), para a peca
-  // ficar SATURADA em vez de lavada.
-  const grad = ctx.createRadialGradient(cx - r * 0.34, cy - r * 0.4, r * 0.08, cx, cy, r * 1.18);
+  // Corpo. A cor-base domina cedo e a cor ESCURA chega ate a borda (raio da
+  // gradiente ~= r), o que aprofunda a peca em vez de deixa-la clara/chapada.
+  const grad = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.38, r * 0.06, cx, cy, r * 1.02);
   grad.addColorStop(0, gem.light);
-  grad.addColorStop(0.3, gem.base);
+  grad.addColorStop(0.22, gem.base);
   grad.addColorStop(1, gem.dark);
 
   shapePath(ctx, gem.shape, cx, cy, r);
@@ -232,27 +232,27 @@ export function drawGem(ctx, cx, cy, radius, type, special = 0, time = 0) {
   const sub = ctx.createRadialGradient(cx, cy + r * 0.5, r * 0.08, cx, cy + r * 0.5, r * 1.15);
   sub.addColorStop(0, gem.light);
   sub.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.globalAlpha = 0.14;
+  ctx.globalAlpha = 0.08;
   ctx.fillStyle = sub;
   ctx.fillRect(cx - r * 1.3, cy - r * 1.3, r * 2.6, r * 2.6);
   ctx.restore();
 
   // Contorno interno claro: "borda de bala", faz a peca parecer solida.
   shapePath(ctx, gem.shape, cx, cy, r);
-  ctx.strokeStyle = 'rgba(255,255,255,0.34)';
-  ctx.lineWidth = Math.max(1, r * 0.09);
+  ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+  ctx.lineWidth = Math.max(1, r * 0.08);
   ctx.stroke();
 
   // Brilho especular
   ctx.save();
   shapePath(ctx, gem.shape, cx, cy, r);
   ctx.clip();
-  ctx.globalAlpha = 0.38;
+  ctx.globalAlpha = 0.26;
   ctx.fillStyle = '#fff';
   ctx.beginPath();
-  ctx.ellipse(cx - r * 0.3, cy - r * 0.42, r * 0.32, r * 0.18, -0.5, 0, Math.PI * 2);
+  ctx.ellipse(cx - r * 0.3, cy - r * 0.42, r * 0.3, r * 0.16, -0.5, 0, Math.PI * 2);
   ctx.fill();
-  ctx.globalAlpha = 0.82;
+  ctx.globalAlpha = 0.62;
   ctx.beginPath();
   ctx.arc(cx - r * 0.38, cy - r * 0.46, r * 0.1, 0, Math.PI * 2);
   ctx.fill();
